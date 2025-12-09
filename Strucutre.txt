@@ -1,0 +1,20 @@
+i need to create an android app for the above code. but it was completely bundled with in single place. i need it in bekow format to create android app. please give me the code to copy and paste it in vs code.
+
+src/
+├── components/        (Small, reusable UI parts)
+│   ├── AvatarUpload.jsx
+│   ├── FilterBar.jsx
+│   ├── StatCard.jsx
+│   └── RecordDetails.jsx
+├── screens/           (Full page views)
+│   ├── Dashboard.jsx
+│   ├── HistoryReport.jsx
+│   ├── DetailedRecordList.jsx
+│   ├── SettingsScreen.jsx
+│   ├── RecordForm.jsx
+│   └── Onboarding.jsx
+├── utils/             (Helper functions)
+│   └── helpers.js
+├── App.jsx            (Main entry point)
+├── index.css
+└── main.jsx

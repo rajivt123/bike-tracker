@@ -1,0 +1,5 @@
+{
+  "appId": "com.biketracker.app",
+  "appName": "bike-tracker",
+  "webDir": "dist"
+}

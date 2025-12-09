@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">bike-tracker</string>
+    <string name="title_activity_main">bike-tracker</string>
+    <string name="package_name">com.biketracker.app</string>
+    <string name="custom_url_scheme">com.biketracker.app</string>
+</resources>
