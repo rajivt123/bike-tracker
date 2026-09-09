@@ -1,10 +1,32 @@
 // src/utils/helpers.js
 
+export const parseLocalDate = (dateStr) => {
+  if (!dateStr) return new Date();
+  if (dateStr instanceof Date) return dateStr;
+  const parts = String(dateStr).split('-');
+  if (parts.length === 3) {
+    return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+  }
+  return new Date(String(dateStr).replace(/-/g, '/'));
+};
+
 export const calculateStats = (records) => {
-  const totalAmount = records.reduce((sum, r) => sum + parseFloat(r.amount || 0), 0);
-  const totalQuantity = records.reduce((sum, r) => sum + parseFloat(r.quantity || 0), 0);
-  const totalDriven = records.reduce((sum, r) => sum + parseFloat(r.totalDriven || 0), 0);
+  if (!records || records.length === 0) {
+    return {
+      totalAmount: 0,
+      totalQuantity: 0,
+      totalDriven: 0,
+      avgMileage: 0,
+      avgRatePerKm: 0,
+      count: 0
+    };
+  }
+
+  const totalAmount = records.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+  const totalQuantity = records.reduce((sum, r) => sum + (parseFloat(r.quantity) || 0), 0);
+  const totalDriven = records.reduce((sum, r) => sum + (parseFloat(r.totalDriven) || 0), 0);
   const count = records.length;
+
   // Avoid division by zero
   const avgMileage = totalQuantity > 0 ? (totalDriven / totalQuantity) : 0;
   const avgRatePerKm = totalDriven > 0 ? (totalAmount / totalDriven) : 0;
@@ -21,7 +43,7 @@ export const calculateStats = (records) => {
 
 export const getDateRangeString = (records) => {
   if (!records || records.length === 0) return "No Records";
-  const dates = records.map(r => new Date(r.date));
+  const dates = records.map(r => parseLocalDate(r.date).getTime());
   const minDate = new Date(Math.min(...dates));
   const maxDate = new Date(Math.max(...dates));
 
