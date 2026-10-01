@@ -10,22 +10,56 @@ import {
   Monitor, 
   DownloadCloud, 
   Fuel, 
-  CheckCircle2,
   Sun,
-  Moon
+  Moon,
+  Navigation,
+  Wrench,
+  ShieldCheck,
+  BookOpen,
+  Car
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { AppDataProvider, useAppData } from './context/AppDataContext';
+
+import AuthScreen from './screens/AuthScreen';
 import Onboarding from './screens/Onboarding';
 import Dashboard from './screens/Dashboard';
 import RecordForm from './screens/RecordForm';
 import HistoryReport from './screens/HistoryReport';
 import DetailedRecordList from './screens/DetailedRecordList';
 import SettingsScreen from './screens/SettingsScreen';
+import TripsScreen from './screens/TripsScreen';
+import ServiceRepairScreen from './screens/ServiceRepairScreen';
+import DocumentsRemindersScreen from './screens/DocumentsRemindersScreen';
+import CashBookScreen from './screens/CashBookScreen';
 
-export default function App() {
-  const [view, setView] = useState('loading');
-  
-  // Theme state: defaults to 'light' on every page refresh / enter as requested!
+function AppContent() {
+  const { user, profile, loading: authLoading, updateProfile } = useAuth();
+  const { 
+    activeArea,
+    setActiveArea,
+    vehicles,
+    activeVehicle,
+    records,
+    bin,
+    addCompletedFuelRecord,
+    addPendingFuelRecord,
+    completePendingRecord,
+    updateFuelRecord,
+    moveToBin,
+    restoreFromBin,
+    permanentDelete,
+    bulkImportFuelRecords,
+    addVehicle,
+    updateVehicle
+  } = useAppData();
+
+  const [view, setView] = useState('home');
+  const [editingRecord, setEditingRecord] = useState(null);
+
+  // Theme state: defaults to 'light' on every page refresh / enter as requested
   const [theme, setTheme] = useState('light');
 
   useEffect(() => {
@@ -43,29 +77,6 @@ export default function App() {
   const toggleTheme = () => {
     setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
   };
-
-  const [userProfile, setUserProfile] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('bike_profile')) || { name: '', regNumber: '', isSetup: false };
-    } catch {
-      return { name: '', regNumber: '', isSetup: false };
-    }
-  });
-  const [records, setRecords] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('bike_records')) || [];
-    } catch {
-      return [];
-    }
-  });
-  const [bin, setBin] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('bike_bin')) || [];
-    } catch {
-      return [];
-    }
-  });
-  const [editingRecord, setEditingRecord] = useState(null);
 
   // Layout switcher for PC testing ('desktop' or 'mobile-preview')
   const [pcViewMode, setPcViewMode] = useState('desktop');
@@ -92,15 +103,6 @@ export default function App() {
   const [filterConfig, setFilterConfig] = useState(initialFilterConfig);
 
   useEffect(() => {
-    if (!userProfile.isSetup) {
-      setView('onboarding');
-    } else if (view === 'loading') {
-      setView('home');
-    }
-  }, [userProfile.isSetup, view]);
-
-  useEffect(() => {
-    // Capture PWA install prompt
     const handleBeforeInstall = (e) => {
       e.preventDefault();
       setDeferredPrompt(e);
@@ -111,18 +113,6 @@ export default function App() {
     window.addEventListener('beforeinstallprompt', handleBeforeInstall);
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem('bike_records', JSON.stringify(records));
-  }, [records]);
-
-  useEffect(() => {
-    localStorage.setItem('bike_profile', JSON.stringify(userProfile));
-  }, [userProfile]);
-
-  useEffect(() => {
-    localStorage.setItem('bike_bin', JSON.stringify(bin));
-  }, [bin]);
 
   const handleInstallPWA = async () => {
     if (!deferredPrompt) return;
@@ -135,9 +125,50 @@ export default function App() {
     setDeferredPrompt(null);
   };
 
-  const handleOnboardingComplete = (profileData) => {
-    setUserProfile(profileData);
-    setView('home');
+  // Auth Loading state
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-100 dark:bg-[#090d16] flex flex-col items-center justify-center p-4 bg-cyber-grid text-slate-800 dark:text-slate-100">
+        <div className="w-12 h-12 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <h2 className="font-black text-lg text-slate-900 dark:text-white">Expenses Tracker</h2>
+        <p className="text-xs text-slate-500 mt-1 font-mono">Connecting to cloud telemetry...</p>
+      </div>
+    );
+  }
+
+  // Unauthenticated user -> Auth screen
+  if (!user) {
+    return <AuthScreen />;
+  }
+
+  // If user has no vehicles and no display name, show Onboarding
+  const needsOnboarding = vehicles.length === 0 && !profile?.display_name;
+  if (needsOnboarding && view === 'onboarding') {
+    return (
+      <Onboarding
+        onComplete={async (profileData) => {
+          try {
+            await updateProfile({ display_name: profileData.name });
+            await addVehicle({
+              name: `${profileData.name}'s Bike`,
+              registration_number: profileData.regNumber,
+            });
+            setView('home');
+          } catch (err) {
+            console.error('Onboarding error:', err);
+            setView('home');
+          }
+        }}
+        onImport={(file) => handleImport(file)}
+      />
+    );
+  }
+
+  const userProfile = {
+    name: profile?.display_name || user.email?.split('@')[0] || 'Rider',
+    regNumber: activeVehicle?.registration_number || '',
+    avatar: profile?.avatar_path || null,
+    isSetup: true,
   };
 
   const handleBackFromDetailedList = () => {
@@ -145,183 +176,271 @@ export default function App() {
     setView('home');
   };
 
-  const handleSaveRecord = (newRecord) => {
-    let updatedRecords;
-    if (editingRecord) {
-      updatedRecords = records.map(r => r.id === newRecord.id ? newRecord : r);
-      setView('detailed_list');
-    } else {
-      updatedRecords = [...records, newRecord];
-      setView('home');
+  const handleSaveRecord = async (savedData) => {
+    try {
+      if (editingRecord) {
+        if (editingRecord.status === 'pending' && savedData.newReading) {
+          await completePendingRecord(savedData.newReading);
+          setView('home');
+        } else {
+          await updateFuelRecord(savedData.id, savedData);
+          setView('detailed_list');
+        }
+        setEditingRecord(null);
+      } else if (savedData.status === 'pending') {
+        await addPendingFuelRecord(savedData);
+        setView('home');
+      } else {
+        await addCompletedFuelRecord(savedData);
+        setView('home');
+      }
+    } catch (err) {
+      alert('Error saving record: ' + err.message);
     }
-    updatedRecords.sort((a, b) => new Date(a.date) - new Date(b.date));
-    setRecords(updatedRecords);
-    setEditingRecord(null);
   };
 
-  const handleMoveToBin = (id) => {
-    const recordToDelete = records.find(r => r.id === id);
-    if (recordToDelete) {
-      setBin([...bin, recordToDelete]);
-      setRecords(records.filter(r => r.id !== id));
+  const handleCompletePendingRefill = (pending) => {
+    setEditingRecord(pending);
+    setView('edit');
+  };
+
+  const handleMoveToBin = async (id) => {
+    try {
+      await moveToBin(id);
       setEditingRecord(null);
       setView('detailed_list');
+    } catch (err) {
+      alert('Error deleting record: ' + err.message);
     }
   };
 
-  const handleRestoreFromBin = (id) => {
-    const recordToRestore = bin.find(r => r.id === id);
-    if (recordToRestore) {
-      setRecords([...records, recordToRestore].sort((a, b) => new Date(a.date) - new Date(b.date)));
-      setBin(bin.filter(r => r.id !== id));
+  const handleRestoreFromBin = async (id) => {
+    try {
+      await restoreFromBin(id);
+    } catch (err) {
+      alert('Error restoring record: ' + err.message);
     }
   };
 
-  const handlePermanentDelete = (id) => {
+  const handlePermanentDelete = async (id) => {
     if (window.confirm("Permanently delete this record? This cannot be undone.")) {
-      setBin(bin.filter(r => r.id !== id));
+      try {
+        await permanentDelete(id);
+      } catch (err) {
+        alert('Error permanently deleting record: ' + err.message);
+      }
     }
   };
 
   const handleResetData = () => {
-    if (window.confirm("WARNING: This will delete ALL data, including your profile and history. This cannot be undone. Are you sure?")) {
-      setRecords([]);
-      setBin([]);
-      setUserProfile({ name: '', regNumber: '', isSetup: false });
+    if (window.confirm("WARNING: Clear local browser cache? Your cloud records in Supabase will stay safe.")) {
       localStorage.clear();
-      setView('onboarding');
+      window.location.reload();
     }
   };
 
-  const handleImport = (file) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
-        const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+  const handleImport = async (file) => {
+    if (!file) return;
+    if (!activeVehicle?.id) {
+      alert("Please select or configure an active vehicle before importing records.");
+      return;
+    }
 
-        if (!rows || rows.length === 0) {
-          alert("The uploaded sheet is empty.");
+    try {
+      let rawRows = [];
+      const fileName = (file.name || '').toLowerCase();
+
+      if (fileName.endsWith('.json') || file.type === 'application/json') {
+        const text = await file.text();
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) {
+          rawRows = parsed;
+        } else if (parsed && Array.isArray(parsed.records)) {
+          rawRows = parsed.records;
+        } else if (parsed && Array.isArray(parsed.data)) {
+          rawRows = parsed.data;
+        } else {
+          alert("The uploaded JSON file does not contain a valid records array.");
           return;
         }
+      } else {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array', cellDates: true });
+        const firstSheetName = workbook.SheetNames[0];
+        if (!firstSheetName) {
+          alert("The uploaded spreadsheet contains no sheets.");
+          return;
+        }
+        const worksheet = workbook.Sheets[firstSheetName];
+        rawRows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+      }
 
-        const clean = str => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const findVal = (row, prefixes) => {
-          for (const key of Object.keys(row)) {
-            const cKey = clean(key);
-            for (const p of prefixes) {
-              const cp = clean(p);
-              if (cKey.startsWith(cp) || cKey.includes(cp)) {
-                if (row[key] !== undefined && row[key] !== '') return row[key];
-              }
+      if (!rawRows || rawRows.length === 0) {
+        alert("The uploaded file contains no data rows.");
+        return;
+      }
+
+      const clean = str => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const findVal = (row, prefixes) => {
+        for (const key of Object.keys(row)) {
+          const cKey = clean(key);
+          for (const p of prefixes) {
+            const cp = clean(p);
+            if (cKey.startsWith(cp) || cKey.includes(cp)) {
+              if (row[key] !== undefined && row[key] !== '') return row[key];
             }
           }
-          return undefined;
-        };
+        }
+        return undefined;
+      };
 
-        const normalizeDate = (raw) => {
-          if (!raw) return null;
-          if (raw instanceof Date && !isNaN(raw)) {
-            const y = raw.getFullYear();
-            const m = String(raw.getMonth() + 1).padStart(2, '0');
-            const d = String(raw.getDate()).padStart(2, '0');
-            return `${y}-${m}-${d}`;
-          }
-          if (typeof raw === 'number') {
-            const utcDays = Math.floor(raw - 25569);
-            const date = new Date(utcDays * 86400 * 1000);
-            const y = date.getUTCFullYear();
-            const m = String(date.getUTCMonth() + 1).padStart(2, '0');
-            const d = String(date.getUTCDate()).padStart(2, '0');
-            return `${y}-${m}-${d}`;
-          }
-          const s = String(raw).trim();
-          const m1 = s.match(/^(\d{4})[-\\/.](\d{1,2})[-\\/.](\d{1,2})/);
-          if (m1) return `${m1[1]}-${String(m1[2]).padStart(2, '0')}-${String(m1[3]).padStart(2, '0')}`;
-          const m2 = s.match(/^(\d{1,2})[-\\/.](\d{1,2})[-\\/.](\d{4})/);
-          if (m2) return `${m2[3]}-${String(m2[2]).padStart(2, '0')}-${String(m2[1]).padStart(2, '0')}`;
-          const d = new Date(s);
-          if (!isNaN(d)) return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-          return null;
-        };
+      const normalizeDate = (raw) => {
+        if (!raw) return null;
+        if (raw instanceof Date && !isNaN(raw)) {
+          const y = raw.getFullYear();
+          const m = String(raw.getMonth() + 1).padStart(2, '0');
+          const d = String(raw.getDate()).padStart(2, '0');
+          return `${y}-${m}-${d}`;
+        }
+        if (typeof raw === 'number') {
+          const utcDays = Math.floor(raw - 25569);
+          const date = new Date(utcDays * 86400 * 1000);
+          const y = date.getUTCFullYear();
+          const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+          const d = String(date.getUTCDate()).padStart(2, '0');
+          return `${y}-${m}-${d}`;
+        }
+        const s = String(raw).trim();
+        const m1 = s.match(/^(\d{4})[-\\/.](\d{1,2})[-\\/.](\d{1,2})/);
+        if (m1) return `${m1[1]}-${String(m1[2]).padStart(2, '0')}-${String(m1[3]).padStart(2, '0')}`;
+        const m2 = s.match(/^(\d{1,2})[-\\/.](\d{1,2})[-\\/.](\d{4})/);
+        if (m2) return `${m2[3]}-${String(m2[2]).padStart(2, '0')}-${String(m2[1]).padStart(2, '0')}`;
+        const d = new Date(s);
+        if (!isNaN(d)) return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return null;
+      };
 
-        let importedCount = 0;
-        let updatedCount = 0;
-        const recordMap = new Map();
-        records.forEach(r => {
-          const key = `${r.date}_${r.oldReading}`;
-          recordMap.set(key, r);
+      // Composite signature generator for duplicate detection: date_amount_rate_prevOdo_currOdo
+      const makeSig = (date, amt, rate, prevOdo, currOdo) => {
+        const d = String(date || '').split('T')[0];
+        const a = Math.round(Number(amt || 0) * 100) / 100;
+        const r = Math.round(Number(rate || 0) * 100) / 100;
+        const p = Math.round(Number(prevOdo || 0) * 10) / 10;
+        const c = Math.round(Number(currOdo || 0) * 10) / 10;
+        return `${d}_${a}_${r}_${p}_${c}`;
+      };
+
+      // Build existing signatures set from active vehicle records
+      const existingSignatures = new Set(
+        records.map(r => makeSig(
+          r.refill_at || r.date,
+          r.amount || r.total_cost,
+          r.rate_per_litre || r.cost || r.fuel_rate_per_litre,
+          r.previous_reserve_odometer ?? r.start_odometer_km ?? r.oldReading,
+          r.current_reserve_odometer ?? r.end_odometer_km ?? r.newReading
+        ))
+      );
+
+      const totalRows = rawRows.length;
+      let duplicateCount = 0;
+      let invalidCount = 0;
+      const validImportRows = [];
+
+      for (const row of rawRows) {
+        const dateRaw = row.refill_at || row.fuel_datetime || row.date || findVal(row, ['refill', 'datetime', 'date', 'time', 'day']);
+        const dateStr = normalizeDate(dateRaw) || new Date().toISOString().split('T')[0];
+
+        const prevOdo = parseFloat(
+          row.previous_reserve_odometer ??
+          row.start_odometer_km ??
+          row.oldReading ??
+          findVal(row, ['previousreserveodometer', 'startodometer', 'oldreading', 'old', 'start', 'prev', 'initial']) ??
+          NaN
+        );
+
+        const currOdo = parseFloat(
+          row.current_reserve_odometer ??
+          row.end_odometer_km ??
+          row.newReading ??
+          findVal(row, ['currentreserveodometer', 'endodometer', 'newreading', 'finalodometer', 'new', 'end', 'curr', 'final', 'odometer']) ??
+          NaN
+        );
+
+        const rate = parseFloat(
+          row.rate_per_litre ??
+          row.fuel_rate_per_litre ??
+          row.cost ??
+          findVal(row, ['rateperlitre', 'rateperliter', 'fuelrate', 'rate', 'perliter', 'perlitre', 'fuelprice']) ??
+          105
+        );
+
+        const amt = parseFloat(
+          row.amount ??
+          row.total_cost ??
+          findVal(row, ['amount', 'totalcost', 'totalamount', 'total', 'paid', 'spent']) ??
+          NaN
+        );
+
+        const notes = row.notes || findVal(row, ['notes', 'comment', 'description', 'remarks']) || 'Imported from file';
+
+        // Reserve-to-Reserve Business Rules:
+        // Must have: amount > 0, rate > 0, prevOdo >= 0, currOdo > prevOdo
+        if (isNaN(amt) || amt <= 0 || isNaN(prevOdo) || prevOdo < 0 || isNaN(currOdo) || currOdo <= prevOdo || isNaN(rate) || rate <= 0) {
+          invalidCount++;
+          continue;
+        }
+
+        const sig = makeSig(dateStr, amt, rate, prevOdo, currOdo);
+        if (existingSignatures.has(sig)) {
+          duplicateCount++;
+          continue;
+        }
+
+        existingSignatures.add(sig);
+        validImportRows.push({
+          refill_at: new Date(dateStr).toISOString(),
+          amount: amt,
+          rate_per_litre: rate,
+          previous_reserve_odometer: prevOdo,
+          current_reserve_odometer: currOdo,
+          notes: notes,
         });
-
-        rows.forEach((row, idx) => {
-          const rawDate = findVal(row, ['date', 'time', 'day']);
-          const dateStr = normalizeDate(rawDate);
-          if (!dateStr) return;
-
-          const amount = parseFloat(findVal(row, ['amount', 'amt', 'spent', 'paid', 'price'])) || 0;
-          const rate = parseFloat(findVal(row, ['rate', 'perl', 'priceperl'])) || 0;
-          const oldR = parseFloat(findVal(row, ['old', 'prev', 'start'])) || 0;
-          const newR = parseFloat(findVal(row, ['new', 'curr', 'end', 'close'])) || 0;
-          const rawQty = parseFloat(findVal(row, ['quant', 'qty', 'liter', 'litre', 'fuel'])) || 0;
-          const rawDriven = parseFloat(findVal(row, ['total', 'drive', 'dist', 'km'])) || 0;
-          const rawMileage = parseFloat(findVal(row, ['mil', 'avg', 'effic'])) || 0;
-          const rawCostKm = parseFloat(findVal(row, ['costper', 'rateper', 'costkm', 'ckm'])) || 0;
-
-          if (amount <= 0 && newR <= 0) return;
-
-          const quantity = rawQty > 0 ? rawQty.toFixed(2) : (rate > 0 ? (amount / rate).toFixed(2) : '0.00');
-          const totalDriven = rawDriven > 0 ? rawDriven.toFixed(1) : (newR > oldR ? (newR - oldR).toFixed(1) : '0.0');
-          const mileage = rawMileage > 0 ? rawMileage.toFixed(2) : ((parseFloat(quantity) > 0 && parseFloat(totalDriven) > 0) ? (parseFloat(totalDriven) / parseFloat(quantity)).toFixed(2) : '0.00');
-          const ratePerKm = rawCostKm > 0 ? rawCostKm.toFixed(2) : ((parseFloat(totalDriven) > 0 && amount > 0) ? (amount / parseFloat(totalDriven)).toFixed(2) : '0.00');
-
-          const key = `${dateStr}_${oldR}`;
-          const newRecord = {
-            id: recordMap.has(key) ? recordMap.get(key).id : (Date.now() + idx),
-            date: dateStr,
-            amount: amount.toString(),
-            rate: rate.toString(),
-            oldReading: oldR.toString(),
-            newReading: newR.toString(),
-            quantity: quantity.toString(),
-            totalDriven: totalDriven.toString(),
-            mileage: mileage.toString(),
-            ratePerKm: ratePerKm.toString()
-          };
-
-          if (recordMap.has(key)) {
-            updatedCount++;
-          } else {
-            importedCount++;
-          }
-          recordMap.set(key, newRecord);
-        });
-
-        const finalRecords = Array.from(recordMap.values()).sort((a, b) => new Date(a.date) - new Date(b.date));
-        setRecords(finalRecords);
-        alert(`Import Complete!\nAdded: ${importedCount}\nUpdated/Overridden: ${updatedCount}`);
-        setView('detailed_list');
-      } catch (err) {
-        console.error("Excel import failed", err);
-        alert("Failed to parse Excel file. Please ensure it has valid columns.");
       }
-    };
-    reader.readAsArrayBuffer(file);
+
+      if (validImportRows.length > 0) {
+        await bulkImportFuelRecords(validImportRows);
+
+        // Advance active vehicle odometer if imported end odometer is higher
+        const maxEndOdo = Math.max(...validImportRows.map(r => r.current_reserve_odometer));
+        const currentVehOdo = parseFloat(activeVehicle.current_odometer_km || 0);
+        if (maxEndOdo > currentVehOdo) {
+          await updateVehicle(activeVehicle.id, { current_odometer_km: maxEndOdo });
+        }
+
+        alert(`Import Complete:\n• Total rows scanned: ${totalRows}\n• Successfully imported: ${validImportRows.length}\n• Duplicates skipped: ${duplicateCount}\n• Invalid rows skipped: ${invalidCount}`);
+        setView('detailed_list');
+      } else {
+        alert(`No new records imported.\n• Total rows scanned: ${totalRows}\n• Duplicates skipped: ${duplicateCount}\n• Invalid rows skipped: ${invalidCount}\n\nNote: Valid records require Amount > 0, Rate > 0, and End Odometer > Start Odometer.`);
+      }
+    } catch (err) {
+      console.error("[handleImport] Error:", err);
+      alert("Failed to parse and import file: " + err.message);
+    }
   };
 
   const lastRecord = records.length > 0 ? records[records.length - 1] : null;
 
-  // Active Screen Renderer
   const renderScreen = () => {
     switch (view) {
-      case 'loading':
-        return <div className="h-full flex items-center justify-center font-bold text-slate-400">Loading Bike Tracker...</div>;
-      case 'onboarding':
-        return <Onboarding onComplete={handleOnboardingComplete} onImport={handleImport} />;
       case 'home':
-        return <Dashboard records={records} userProfile={userProfile} onNavigate={setView} />;
+        return (
+          <Dashboard 
+            records={records} 
+            userProfile={userProfile} 
+            onNavigate={setView} 
+            onCompletePendingRefill={handleCompletePendingRefill}
+          />
+        );
       case 'add':
         return (
           <RecordForm
@@ -343,6 +462,14 @@ export default function App() {
             allRecords={records}
           />
         ) : null;
+      case 'trips':
+        return <TripsScreen onBack={() => setView('home')} />;
+      case 'service':
+        return <ServiceRepairScreen onBack={() => setView('home')} />;
+      case 'documents':
+        return <DocumentsRemindersScreen onBack={() => setView('home')} />;
+      case 'cash_book':
+        return <CashBookScreen />;
       case 'history':
         return (
           <HistoryReport
@@ -371,7 +498,7 @@ export default function App() {
           <SettingsScreen
             onBack={() => setView('home')}
             userProfile={userProfile}
-            onUpdateProfile={setUserProfile}
+            onUpdateProfile={() => {}}
             onImport={handleImport}
             records={records}
             bin={bin}
@@ -383,7 +510,14 @@ export default function App() {
           />
         );
       default:
-        return <Dashboard records={records} userProfile={userProfile} onNavigate={setView} />;
+        return (
+          <Dashboard 
+            records={records} 
+            userProfile={userProfile} 
+            onNavigate={setView}
+            onCompletePendingRefill={handleCompletePendingRefill}
+          />
+        );
     }
   };
 
@@ -395,18 +529,18 @@ export default function App() {
         <div className="glass-panel-glow text-slate-900 dark:text-white px-4 py-2.5 flex items-center justify-between z-50 text-xs border-b border-emerald-500/30">
           <div className="flex items-center gap-2">
             <span className="p-1.5 bg-emerald-500/20 border border-emerald-500/40 rounded-xl text-emerald-600 dark:text-emerald-400 font-bold">📲</span>
-            <span><strong>Install Bike Tracker</strong> for instant offline telemetry and native app experience</span>
+            <span><strong>Install Expenses Tracker</strong> for instant offline telemetry and native app experience</span>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={handleInstallPWA}
-              className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-3 py-1 rounded-lg font-bold transition-all shadow-md shadow-emerald-500/30"
+              className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 px-3 py-1 rounded-lg font-bold transition-all shadow-md shadow-emerald-500/30 cursor-pointer"
             >
               Install App
             </button>
             <button
               onClick={() => setShowInstallBanner(false)}
-              className="text-slate-400 hover:text-slate-700 dark:hover:text-white px-1.5"
+              className="text-slate-400 hover:text-slate-700 dark:hover:text-white px-1.5 cursor-pointer"
             >
               ✕
             </button>
@@ -416,9 +550,9 @@ export default function App() {
 
       {/* DESKTOP HEADER (Visible on PC screens md:) */}
       <header className="hidden md:flex glass-panel-glow text-slate-800 dark:text-white px-6 py-3 items-center justify-between border-b border-slate-200 dark:border-white/10 sticky top-0 z-40">
-        <div className="flex items-center gap-8">
+        <div className="flex items-center gap-6">
           <div 
-            onClick={() => userProfile.isSetup && setView('home')}
+            onClick={() => setView('home')}
             className="flex items-center gap-3 cursor-pointer select-none group"
           >
             <div className="w-10 h-10 bg-gradient-to-br from-emerald-500/20 to-teal-500/10 border border-emerald-500/40 rounded-2xl flex items-center justify-center text-emerald-600 dark:text-emerald-400 group-hover:scale-105 group-hover:border-emerald-400 transition-all shadow-lg shadow-emerald-500/10">
@@ -426,41 +560,83 @@ export default function App() {
             </div>
             <div>
               <span className="font-black text-base tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-                APEX TRACKER
+                EXPENSES TRACKER
                 <span className="text-[10px] uppercase font-extrabold tracking-wider px-2 py-0.5 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40 rounded-full">
-                  v2.0 PWA
+                  CLOUD PWA
                 </span>
               </span>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">Smart Telemetry & Fuel Diagnostics</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">Vehicles Telemetry & Cash Book</p>
             </div>
           </div>
 
-          {/* Desktop Navigation Tabs */}
-          {userProfile.isSetup && (
-            <nav className="flex items-center gap-1.5 bg-slate-200/80 dark:bg-slate-900/90 p-1.5 rounded-2xl border border-slate-300 dark:border-white/10 text-xs font-semibold shadow-inner">
+          {/* PRIMARY DOMAIN AREA SWITCHER: VEHICLES vs CASH BOOK */}
+          <div className="p-1 bg-slate-200/90 dark:bg-slate-900/90 rounded-2xl border border-slate-300 dark:border-white/10 flex items-center text-xs font-black shadow-inner">
+            <button
+              onClick={() => {
+                setActiveArea('vehicles');
+                setView('home');
+              }}
+              className={`px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer ${
+                activeArea === 'vehicles'
+                  ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Car size={15} /> VEHICLES
+            </button>
+            <button
+              onClick={() => {
+                setActiveArea('cash_book');
+                setView('cash_book');
+              }}
+              className={`px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer ${
+                activeArea === 'cash_book'
+                  ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <BookOpen size={15} /> CASH BOOK
+            </button>
+          </div>
+
+          {/* Desktop Navigation Tabs for Vehicles */}
+          {activeArea === 'vehicles' && (
+            <nav className="flex items-center gap-1 bg-slate-200/80 dark:bg-slate-900/90 p-1.5 rounded-2xl border border-slate-300 dark:border-white/10 text-xs font-semibold shadow-inner">
               <button
                 onClick={() => setView('home')}
-                className={`px-4 py-2 rounded-xl flex items-center gap-2 transition-all ${view === 'home' ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 font-bold shadow-md shadow-emerald-500/25' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 dark:text-slate-300 dark:hover:text-white dark:hover:bg-white/5'}`}
+                className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer ${view === 'home' ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 font-bold shadow-md shadow-emerald-500/25' : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'}`}
               >
-                <LayoutDashboard size={16} /> Cockpit
+                <LayoutDashboard size={15} /> Cockpit
+              </button>
+              <button
+                onClick={() => setView('trips')}
+                className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer ${view === 'trips' ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 font-bold shadow-md shadow-emerald-500/25' : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'}`}
+              >
+                <Navigation size={15} /> Speedometer
+              </button>
+              <button
+                onClick={() => setView('service')}
+                className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer ${view === 'service' ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 font-bold shadow-md shadow-emerald-500/25' : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'}`}
+              >
+                <Wrench size={15} /> Service Hub
+              </button>
+              <button
+                onClick={() => setView('documents')}
+                className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer ${view === 'documents' ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 font-bold shadow-md shadow-emerald-500/25' : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'}`}
+              >
+                <ShieldCheck size={15} /> Vault
               </button>
               <button
                 onClick={() => setView('history')}
-                className={`px-4 py-2 rounded-xl flex items-center gap-2 transition-all ${view === 'history' ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 font-bold shadow-md shadow-emerald-500/25' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 dark:text-slate-300 dark:hover:text-white dark:hover:bg-white/5'}`}
+                className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer ${view === 'history' ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 font-bold shadow-md shadow-emerald-500/25' : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'}`}
               >
-                <BarChart3 size={16} /> Analytics
+                <BarChart3 size={15} /> Analytics
               </button>
               <button
                 onClick={() => setView('detailed_list')}
-                className={`px-4 py-2 rounded-xl flex items-center gap-2 transition-all ${view === 'detailed_list' ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 font-bold shadow-md shadow-emerald-500/25' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 dark:text-slate-300 dark:hover:text-white dark:hover:bg-white/5'}`}
+                className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer ${view === 'detailed_list' ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 font-bold shadow-md shadow-emerald-500/25' : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'}`}
               >
-                <TableProperties size={16} /> Logs Data
-              </button>
-              <button
-                onClick={() => setView('settings')}
-                className={`px-4 py-2 rounded-xl flex items-center gap-2 transition-all ${view === 'settings' ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 font-bold shadow-md shadow-emerald-500/25' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60 dark:text-slate-300 dark:hover:text-white dark:hover:bg-white/5'}`}
-              >
-                <SettingsIcon size={16} /> Bike Profile
+                <TableProperties size={15} /> Logs
               </button>
             </nav>
           )}
@@ -469,10 +645,10 @@ export default function App() {
         {/* Right Header Controls */}
         <div className="flex items-center gap-3">
           {/* Quick Action "+ Log Refill" CTA button on PC */}
-          {userProfile.isSetup && (
+          {activeArea === 'vehicles' && (
             <button
               onClick={() => setView('add')}
-              className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 rounded-xl text-xs font-extrabold flex items-center gap-2 transition-all shadow-lg shadow-emerald-500/20 active:scale-95"
+              className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 rounded-xl text-xs font-extrabold flex items-center gap-2 transition-all shadow-lg shadow-emerald-500/20 active:scale-95 cursor-pointer"
             >
               <PlusCircle size={17} /> Log Refill
             </button>
@@ -501,93 +677,84 @@ export default function App() {
           <div className="bg-slate-200/80 dark:bg-slate-900/90 p-1 rounded-xl border border-slate-300 dark:border-white/10 flex items-center text-xs">
             <button
               onClick={() => setPcViewMode('desktop')}
-              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors font-medium ${pcViewMode === 'desktop' ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'}`}
+              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors font-medium cursor-pointer ${pcViewMode === 'desktop' ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'}`}
               title="Wide Desktop Cockpit"
             >
               <Monitor size={14} /> Desktop UI
             </button>
             <button
               onClick={() => setPcViewMode('mobile-preview')}
-              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors font-medium ${pcViewMode === 'mobile-preview' ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'}`}
+              className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors font-medium cursor-pointer ${pcViewMode === 'mobile-preview' ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'}`}
               title="Preview Mobile PWA Frame"
             >
               <Smartphone size={14} /> Mobile PWA
             </button>
           </div>
 
-          {/* Install Button in Header */}
-          {isInstallable && (
-            <button
-              onClick={handleInstallPWA}
-              className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-700 dark:text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
-              title="Install progressive web app"
-            >
-              <DownloadCloud size={15} /> Install
-            </button>
-          )}
-
           {/* User Profile Pill */}
-          {userProfile.isSetup && (
-            <div 
-              onClick={() => setView('settings')}
-              className="flex items-center gap-2.5 bg-white dark:bg-slate-900/80 hover:bg-slate-50 dark:hover:bg-slate-800 px-3.5 py-1.5 rounded-2xl border border-slate-300 dark:border-white/10 cursor-pointer transition-all hover:border-emerald-500/40 shadow-sm"
-            >
-              {userProfile.avatar ? (
-                <img src={userProfile.avatar} alt="Profile" className="w-6 h-6 rounded-full object-cover ring-2 ring-emerald-400" />
-              ) : (
-                <div className="w-6 h-6 rounded-full bg-emerald-500 text-slate-950 font-black text-xs flex items-center justify-center">
-                  {userProfile.name ? userProfile.name[0].toUpperCase() : 'U'}
-                </div>
-              )}
-              <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{userProfile.name}</span>
-            </div>
-          )}
+          <div 
+            onClick={() => setView('settings')}
+            className="flex items-center gap-2.5 bg-white dark:bg-slate-900/80 hover:bg-slate-50 dark:hover:bg-slate-800 px-3.5 py-1.5 rounded-2xl border border-slate-300 dark:border-white/10 cursor-pointer transition-all hover:border-emerald-500/40 shadow-sm"
+          >
+            {userProfile.avatar ? (
+              <img src={userProfile.avatar} alt="Profile" className="w-6 h-6 rounded-full object-cover ring-2 ring-emerald-400" />
+            ) : (
+              <div className="w-6 h-6 rounded-full bg-emerald-500 text-slate-950 font-black text-xs flex items-center justify-center">
+                {userProfile.name ? userProfile.name[0].toUpperCase() : 'U'}
+              </div>
+            )}
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-200">{userProfile.name}</span>
+          </div>
         </div>
       </header>
 
       {/* MOBILE TOP BAR (Visible on phones < md:) */}
       <div className="md:hidden glass-panel px-4 py-2.5 flex items-center justify-between border-b border-slate-200 dark:border-white/10 sticky top-0 z-40">
         <div 
-          onClick={() => userProfile.isSetup && setView('home')} 
-          className="flex items-center gap-2.5 cursor-pointer select-none"
+          onClick={() => setView('home')} 
+          className="flex items-center gap-2 cursor-pointer select-none"
         >
           <div className="w-8 h-8 bg-emerald-500/15 border border-emerald-500/30 rounded-xl flex items-center justify-center text-emerald-600 dark:text-emerald-400">
             <Fuel size={17} />
           </div>
           <div>
-            <span className="font-black text-sm tracking-tight text-slate-900 dark:text-white">APEX TRACKER</span>
+            <span className="font-black text-sm tracking-tight text-slate-900 dark:text-white">
+              {activeArea === 'cash_book' ? 'CASH BOOK' : 'EXPENSES'}
+            </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Mobile Domain Switcher (Vehicles vs Cash Book) */}
+        <div className="flex items-center gap-1.5">
+          <div className="p-0.5 bg-slate-200 dark:bg-slate-800 rounded-xl flex text-[10px] font-black border border-slate-300 dark:border-white/10">
+            <button
+              onClick={() => {
+                setActiveArea('vehicles');
+                setView('home');
+              }}
+              className={`px-2 py-1 rounded-lg transition-all ${activeArea === 'vehicles' ? 'bg-emerald-500 text-slate-950 font-black' : 'text-slate-500'}`}
+            >
+              Vehicles
+            </button>
+            <button
+              onClick={() => {
+                setActiveArea('cash_book');
+                setView('cash_book');
+              }}
+              className={`px-2 py-1 rounded-lg transition-all ${activeArea === 'cash_book' ? 'bg-emerald-500 text-slate-950 font-black' : 'text-slate-500'}`}
+            >
+              Cash Book
+            </button>
+          </div>
+
           {/* Mobile Theme Toggle Button */}
           <button
             onClick={toggleTheme}
-            className="px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-slate-900 text-xs font-bold flex items-center gap-1.5 text-slate-700 dark:text-slate-200 shadow-sm active:scale-95 transition-all"
+            className="p-1.5 rounded-xl border border-slate-300 dark:border-white/10 bg-white dark:bg-slate-900 text-xs font-bold flex items-center text-slate-700 dark:text-slate-200 shadow-sm active:scale-95 transition-all"
             title={theme === 'light' ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
           >
-            {theme === 'light' ? (
-              <>
-                <Moon size={14} className="text-indigo-600" />
-                <span>Dark</span>
-              </>
-            ) : (
-              <>
-                <Sun size={14} className="text-amber-400" />
-                <span>Light</span>
-              </>
-            )}
+            {theme === 'light' ? <Moon size={15} className="text-indigo-600" /> : <Sun size={15} className="text-amber-400" />}
           </button>
-
-          {isInstallable && (
-            <button
-              onClick={handleInstallPWA}
-              className="p-1.5 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 rounded-xl"
-              title="Install PWA"
-            >
-              <DownloadCloud size={16} />
-            </button>
-          )}
         </div>
       </div>
 
@@ -608,48 +775,77 @@ export default function App() {
             </div>
 
             {/* Mobile Bottom Navigation (Inside phone preview) */}
-            {userProfile.isSetup && (
-              <nav className="glass-panel-glow border-t border-slate-200 dark:border-white/10 py-2.5 px-3 flex justify-around items-center z-30">
-                <button
-                  onClick={() => setView('home')}
-                  className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'home' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
-                >
-                  <LayoutDashboard size={20} />
-                  <span>Cockpit</span>
-                </button>
-                <button
-                  onClick={() => setView('history')}
-                  className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'history' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
-                >
-                  <BarChart3 size={20} />
-                  <span>Analytics</span>
-                </button>
-                
-                {/* Elevated Center Button */}
-                <button
-                  onClick={() => setView('add')}
-                  className="w-12 h-12 -mt-5 bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/40 border-2 border-white dark:border-[#090d16] active:scale-90 transition-transform"
-                  title="Log Refill"
-                >
-                  <PlusCircle size={26} />
-                </button>
+            <nav className="glass-panel-glow border-t border-slate-200 dark:border-white/10 py-2 px-3 flex justify-around items-center z-30">
+              {activeArea === 'cash_book' ? (
+                <>
+                  <button
+                    onClick={() => setView('cash_book')}
+                    className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'cash_book' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500'}`}
+                  >
+                    <BookOpen size={20} />
+                    <span>Ledger</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveArea('vehicles');
+                      setView('home');
+                    }}
+                    className="flex flex-col items-center gap-1 text-[10px] font-bold text-slate-500"
+                  >
+                    <Car size={20} />
+                    <span>Vehicles</span>
+                  </button>
+                  <button
+                    onClick={() => setView('settings')}
+                    className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'settings' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500'}`}
+                  >
+                    <SettingsIcon size={20} />
+                    <span>Settings</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setView('home')}
+                    className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'home' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500'}`}
+                  >
+                    <LayoutDashboard size={20} />
+                    <span>Cockpit</span>
+                  </button>
+                  <button
+                    onClick={() => setView('trips')}
+                    className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'trips' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500'}`}
+                  >
+                    <Navigation size={20} />
+                    <span>Speedo</span>
+                  </button>
+                  
+                  {/* Elevated Center Button */}
+                  <button
+                    onClick={() => setView('add')}
+                    className="w-12 h-12 -mt-5 bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/40 border-2 border-white dark:border-[#090d16] active:scale-90 transition-transform"
+                    title="Log Refill"
+                  >
+                    <PlusCircle size={26} />
+                  </button>
 
-                <button
-                  onClick={() => setView('detailed_list')}
-                  className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'detailed_list' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
-                >
-                  <TableProperties size={20} />
-                  <span>Logs</span>
-                </button>
-                <button
-                  onClick={() => setView('settings')}
-                  className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'settings' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'}`}
-                >
-                  <SettingsIcon size={20} />
-                  <span>Profile</span>
-                </button>
-              </nav>
-            )}
+                  <button
+                    onClick={() => setView('service')}
+                    className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'service' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500'}`}
+                  >
+                    <Wrench size={20} />
+                    <span>Service</span>
+                  </button>
+                  <button
+                    onClick={() => setView('settings')}
+                    className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'settings' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500'}`}
+                  >
+                    <SettingsIcon size={20} />
+                    <span>Settings</span>
+                  </button>
+                </>
+              )}
+            </nav>
           </div>
         ) : (
           /* Responsive Layout: Full edge-to-edge on Mobile, Spacious Dashboard on PC */
@@ -658,53 +854,92 @@ export default function App() {
               {renderScreen()}
             </div>
 
-            {/* Mobile Bottom Navigation Dock (Visible on screens < 768px) */}
-            {userProfile.isSetup && (
-              <nav className="md:hidden safe-bottom glass-panel-glow border-t border-slate-200 dark:border-white/10 px-4 py-2 flex justify-around items-center z-40 sticky bottom-0">
-                <button
-                  onClick={() => setView('home')}
-                  className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'home' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500 dark:text-slate-400'}`}
-                >
-                  <LayoutDashboard size={21} />
-                  <span>Cockpit</span>
-                </button>
-                <button
-                  onClick={() => setView('history')}
-                  className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'history' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500 dark:text-slate-400'}`}
-                >
-                  <BarChart3 size={21} />
-                  <span>Analytics</span>
-                </button>
+            {/* Mobile Bottom Navigation Dock (Visible on screens < md:) */}
+            <nav className="md:hidden safe-bottom glass-panel-glow border-t border-slate-200 dark:border-white/10 px-4 py-2 flex justify-around items-center z-40 sticky bottom-0">
+              {activeArea === 'cash_book' ? (
+                <>
+                  <button
+                    onClick={() => setView('cash_book')}
+                    className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'cash_book' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500'}`}
+                  >
+                    <BookOpen size={20} />
+                    <span>Ledger</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveArea('vehicles');
+                      setView('home');
+                    }}
+                    className="flex flex-col items-center gap-1 text-[10px] font-bold text-slate-500"
+                  >
+                    <Car size={20} />
+                    <span>Vehicles Area</span>
+                  </button>
+                  <button
+                    onClick={() => setView('settings')}
+                    className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'settings' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500'}`}
+                  >
+                    <SettingsIcon size={20} />
+                    <span>Settings</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setView('home')}
+                    className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'home' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500'}`}
+                  >
+                    <LayoutDashboard size={21} />
+                    <span>Cockpit</span>
+                  </button>
+                  <button
+                    onClick={() => setView('trips')}
+                    className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'trips' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500'}`}
+                  >
+                    <Navigation size={21} />
+                    <span>Speedo</span>
+                  </button>
 
-                {/* Floating center action button */}
-                <button
-                  onClick={() => setView('add')}
-                  className="w-12 h-12 -mt-6 bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 rounded-2xl flex items-center justify-center shadow-xl shadow-emerald-500/40 border-2 border-white dark:border-[#090d16] active:scale-90 transition-transform"
-                  title="Quick Refill Log"
-                >
-                  <PlusCircle size={26} />
-                </button>
+                  {/* Floating center action button */}
+                  <button
+                    onClick={() => setView('add')}
+                    className="w-12 h-12 -mt-6 bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 rounded-2xl flex items-center justify-center shadow-xl shadow-emerald-500/40 border-2 border-white dark:border-[#090d16] active:scale-90 transition-transform cursor-pointer"
+                    title="Quick Refill Log"
+                  >
+                    <PlusCircle size={26} />
+                  </button>
 
-                <button
-                  onClick={() => setView('detailed_list')}
-                  className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'detailed_list' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500 dark:text-slate-400'}`}
-                >
-                  <TableProperties size={21} />
-                  <span>Logs</span>
-                </button>
-                <button
-                  onClick={() => setView('settings')}
-                  className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'settings' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500 dark:text-slate-400'}`}
-                >
-                  <SettingsIcon size={21} />
-                  <span>Profile</span>
-                </button>
-              </nav>
-            )}
+                  <button
+                    onClick={() => setView('service')}
+                    className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'service' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500'}`}
+                  >
+                    <Wrench size={21} />
+                    <span>Service</span>
+                  </button>
+                  <button
+                    onClick={() => setView('settings')}
+                    className={`flex flex-col items-center gap-1 text-[10px] font-bold transition-all ${view === 'settings' ? 'text-emerald-600 dark:text-emerald-400 scale-105' : 'text-slate-500'}`}
+                  >
+                    <SettingsIcon size={21} />
+                    <span>Settings</span>
+                  </button>
+                </>
+              )}
+            </nav>
           </div>
         )}
       </main>
 
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppDataProvider>
+        <AppContent />
+      </AppDataProvider>
+    </AuthProvider>
   );
 }

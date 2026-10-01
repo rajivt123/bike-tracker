@@ -1,17 +1,38 @@
 // src/screens/RecordForm.jsx
 import React, { useState, useMemo } from 'react';
-import { ArrowLeft, Trash2, AlertCircle, Calendar, IndianRupee, Gauge, RefreshCw, Save, CheckCircle2, Fuel, Zap, Sparkles } from 'lucide-react';
+import { 
+  ArrowLeft, 
+  Trash2, 
+  AlertCircle, 
+  Calendar, 
+  IndianRupee, 
+  Gauge, 
+  Save, 
+  CheckCircle2, 
+  Fuel, 
+  Zap, 
+  Sparkles,
+  Clock
+} from 'lucide-react';
 
-const RecordForm = ({ onSave, onCancel, initialData, lastRecord, allRecords, isEditMode = false, onDelete }) => {
+const RecordForm = ({ onSave, onCancel, initialData, lastRecord, _allRecords = [], isEditMode = false, onDelete }) => {
+  // If initialData is pending, we are completing it
+  const isCompletingPending = initialData?.status === 'pending';
+
+  const [isPendingRefill, setIsPendingRefill] = useState(
+    isEditMode ? initialData?.status === 'pending' : false
+  );
+
   const [formData, setFormData] = useState({
     date: initialData?.date || new Date().toISOString().split('T')[0],
-    rate: initialData?.rate || (lastRecord ? lastRecord.rate : ''),
-    amount: initialData?.amount || '',
+    rate: initialData?.cost || initialData?.fuel_rate_per_litre || (lastRecord ? (lastRecord.cost || lastRecord.rate) : ''),
+    amount: initialData?.amount || initialData?.total_cost || '',
     oldReading: initialData?.oldReading ?? (lastRecord ? lastRecord.newReading : ''),
     newReading: initialData?.newReading || '',
+    notes: initialData?.notes || '',
   });
+
   const [error, setError] = useState(null);
-  const [isSyncing, setIsSyncing] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -39,7 +60,7 @@ const RecordForm = ({ onSave, onCancel, initialData, lastRecord, allRecords, isE
     
     const quantity = rate > 0 ? (amount / rate) : 0;
     const totalDriven = newRead > oldRead ? (newRead - oldRead) : 0;
-    const mileage = quantity > 0 ? (totalDriven / quantity) : 0;
+    const mileage = quantity > 0 && totalDriven > 0 ? (totalDriven / quantity) : 0;
     const ratePerKm = totalDriven > 0 ? (amount / totalDriven) : 0;
 
     return {
@@ -55,15 +76,14 @@ const RecordForm = ({ onSave, onCancel, initialData, lastRecord, allRecords, isE
     if (m >= 52) return { text: 'High Efficiency', color: 'emerald', bg: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' };
     if (m >= 42) return { text: 'Optimal Commute', color: 'cyan', bg: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40' };
     if (m > 0) return { text: 'Heavy Consumption', color: 'amber', bg: 'bg-amber-500/20 text-amber-400 border-amber-500/40' };
-    return { text: 'Awaiting Readings', color: 'slate', bg: 'bg-slate-800 text-slate-400 border-slate-700' };
-  }, [calculations.mileage]);
+    return { text: isPendingRefill ? 'Awaiting Next Reserve' : 'Awaiting Readings', color: 'slate', bg: 'bg-slate-800 text-slate-400 border-slate-700' };
+  }, [calculations.mileage, isPendingRefill]);
 
   const validateRecord = () => {
     const amount = parseFloat(formData.amount);
     const rate = parseFloat(formData.rate);
     const currentOldReading = parseFloat(formData.oldReading);
     const currentNewReading = parseFloat(formData.newReading);
-    const currentDate = formData.date;
 
     if (isNaN(amount) || amount <= 0) {
       return "Please enter a valid fuel amount paid (₹).";
@@ -73,63 +93,44 @@ const RecordForm = ({ onSave, onCancel, initialData, lastRecord, allRecords, isE
       return "Please enter a valid fuel rate per liter (₹/L).";
     }
 
-    if (isNaN(currentOldReading) || currentOldReading < 0) {
-      return "Please enter a valid previous/start odometer reading.";
+    if (isCompletingPending) {
+      if (isNaN(currentNewReading) || currentNewReading <= 0) {
+        return "Please enter the current odometer reading upon hitting reserve.";
+      }
+      if (!isNaN(currentOldReading) && currentNewReading <= currentOldReading) {
+        return `Current reading (${currentNewReading} km) must be strictly greater than previous reserve reading (${currentOldReading} km).`;
+      }
+      return null;
     }
 
-    if (isNaN(currentNewReading) || currentNewReading <= 0) {
-      return "Please enter the current odometer reading.";
-    }
-
-    if (currentNewReading <= currentOldReading) {
-      return `Current reading (${currentNewReading} km) must be strictly greater than previous reading (${currentOldReading} km).`;
-    }
-
-    const otherRecords = isEditMode
-      ? allRecords.filter(r => r.id !== initialData.id)
-      : allRecords;
-
-    const sortedRecords = [...otherRecords].sort((a, b) => {
-      const dateDiff = new Date(a.date) - new Date(b.date);
-      if (dateDiff !== 0) return dateDiff;
-      return parseFloat(a.oldReading || 0) - parseFloat(b.oldReading || 0);
-    });
-
-    // Check chronological integrity with other records
-    for (const other of sortedRecords) {
-      const otherOld = parseFloat(other.oldReading);
-      const otherNew = parseFloat(other.newReading);
-
-      if (other.date > currentDate) {
-        if (currentNewReading > otherOld) {
-          return `Logic Error: Current reading (${currentNewReading} km) on ${currentDate} exceeds future start reading (${otherOld} km) on ${other.date}.`;
-        }
-      } else if (other.date < currentDate) {
-        if (currentOldReading < otherNew) {
-          return `Logic Error: Start reading (${currentOldReading} km) on ${currentDate} cannot be lower than previous finish reading (${otherNew} km) on ${other.date}.`;
-        }
+    if (!isPendingRefill) {
+      if (isNaN(currentOldReading) || currentOldReading < 0) {
+        return "Please enter a valid start/previous reserve odometer reading.";
+      }
+      if (isNaN(currentNewReading) || currentNewReading <= 0) {
+        return "Please enter the current reserve odometer reading.";
+      }
+      if (currentNewReading <= currentOldReading) {
+        return `Current reading (${currentNewReading} km) must be strictly greater than previous reading (${currentOldReading} km).`;
       }
     }
 
     return null;
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setError(null);
-    
     const validationError = validateRecord();
     if (validationError) {
       setError(validationError);
       return;
     }
 
-    setIsSyncing(true);
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
     onSave({
-      id: isEditMode ? initialData.id : Date.now(),
+      id: isEditMode ? initialData.id : undefined,
       ...formData,
+      status: isPendingRefill ? 'pending' : 'completed',
+      isPending: isPendingRefill,
       ...calculations
     });
   };
@@ -151,10 +152,12 @@ const RecordForm = ({ onSave, onCancel, initialData, lastRecord, allRecords, isE
           <div>
             <h2 className="font-black text-lg md:text-xl text-slate-900 dark:text-white flex items-center gap-2">
               <Fuel size={20} className="text-emerald-500 dark:text-emerald-400" />
-              {isEditMode ? 'Edit Refill Log' : 'Fuel Station Log'}
+              {isCompletingPending ? 'Complete Reserve-to-Reserve Leg' : isEditMode ? 'Edit Refill Log' : 'Fuel Station Log'}
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 hidden md:block font-medium">
-              {isEditMode ? 'Adjust pump metrics and recalibrate telemetry' : 'Record purchase amount & pump odometer to compute performance in real-time'}
+              {isPendingRefill 
+                ? 'Reserve hit now: recording initial pump fill. Mileage computes when you hit reserve next.' 
+                : 'Full leg: computes fuel efficiency and cost-per-km directly.'}
             </p>
           </div>
         </div>
@@ -163,7 +166,7 @@ const RecordForm = ({ onSave, onCancel, initialData, lastRecord, allRecords, isE
           <button 
             type="button"
             onClick={() => onDelete(initialData.id)} 
-            className="px-3.5 py-2 text-rose-500 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors"
+            className="px-3.5 py-2 text-rose-500 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <Trash2 size={16} /> Delete Log
           </button>
@@ -176,6 +179,34 @@ const RecordForm = ({ onSave, onCancel, initialData, lastRecord, allRecords, isE
 
       <div className="flex-1 p-4 md:p-8 max-w-5xl mx-auto w-full pb-16">
         
+        {/* Reserve-to-Reserve Workflow Mode Selector (when creating new) */}
+        {!isEditMode && !isCompletingPending && (
+          <div className="mb-6 p-1.5 bg-slate-200/80 dark:bg-slate-900/80 rounded-2xl border border-slate-300 dark:border-white/10 flex items-center text-xs font-bold">
+            <button
+              type="button"
+              onClick={() => setIsPendingRefill(false)}
+              className={`flex-1 py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                !isPendingRefill
+                  ? 'bg-white dark:bg-emerald-500 text-slate-900 dark:text-slate-950 shadow-md font-black'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <CheckCircle2 size={16} /> Full Leg (Both Start & End Odo)
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsPendingRefill(true)}
+              className={`flex-1 py-2.5 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                isPendingRefill
+                  ? 'bg-white dark:bg-emerald-500 text-slate-900 dark:text-slate-950 shadow-md font-black'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <Clock size={16} /> Reserve Hit Now (Log Pending Refill)
+            </button>
+          </div>
+        )}
+
         {error && (
           <div className="mb-6 p-4 bg-rose-500/15 border border-rose-500/40 rounded-2xl flex items-start gap-3 text-rose-600 dark:text-rose-300 animate-in fade-in slide-in-from-top-2 shadow-lg">
             <AlertCircle className="shrink-0 mt-0.5 text-rose-500 dark:text-rose-400" size={20} />
@@ -226,8 +257,13 @@ const RecordForm = ({ onSave, onCancel, initialData, lastRecord, allRecords, isE
                     placeholder="500"
                     value={formData.amount}
                     onChange={handleChange}
-                    className="w-full bg-emerald-500/10 dark:bg-emerald-950/20 border border-emerald-500/40 rounded-2xl p-4 pl-10 focus:ring-2 focus:ring-emerald-400 outline-none font-black text-2xl text-emerald-700 dark:text-emerald-300 font-mono"
-                    autoFocus={!isEditMode}
+                    disabled={isCompletingPending}
+                    className={`w-full border rounded-2xl p-4 pl-10 outline-none font-black text-2xl font-mono ${
+                      isCompletingPending 
+                        ? 'bg-slate-200/50 dark:bg-slate-800/50 border-slate-300 dark:border-white/10 text-slate-500 cursor-not-allowed' 
+                        : 'bg-emerald-500/10 dark:bg-emerald-950/20 border-emerald-500/40 text-emerald-700 dark:text-emerald-300 focus:ring-2 focus:ring-emerald-400'
+                    }`}
+                    autoFocus={!isEditMode && !isCompletingPending}
                   />
                   <IndianRupee size={20} className="absolute left-3.5 top-5 text-emerald-500 dark:text-emerald-400 font-bold" />
                 </div>
@@ -239,7 +275,7 @@ const RecordForm = ({ onSave, onCancel, initialData, lastRecord, allRecords, isE
                       key={val}
                       type="button"
                       onClick={() => handleQuickAmount(val)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all border ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all border cursor-pointer ${
                         formData.amount === val.toString() 
                           ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md shadow-emerald-500/30 scale-105' 
                           : 'bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-white/10'
@@ -259,14 +295,14 @@ const RecordForm = ({ onSave, onCancel, initialData, lastRecord, allRecords, isE
                     <button
                       type="button"
                       onClick={() => handleRateStep(-0.5)}
-                      className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 rounded text-xs"
+                      className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 rounded text-xs cursor-pointer"
                     >
                       -0.5
                     </button>
                     <button
                       type="button"
                       onClick={() => handleRateStep(0.5)}
-                      className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 rounded text-xs"
+                      className="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 rounded text-xs cursor-pointer"
                     >
                       +0.5
                     </button>
@@ -281,7 +317,10 @@ const RecordForm = ({ onSave, onCancel, initialData, lastRecord, allRecords, isE
                     placeholder="105.10"
                     value={formData.rate}
                     onChange={handleChange}
-                    className="w-full glass-input rounded-2xl p-3.5 pl-10 font-bold font-mono text-slate-900 dark:text-white text-base outline-none"
+                    disabled={isCompletingPending}
+                    className={`w-full glass-input rounded-2xl p-3.5 pl-10 font-bold font-mono text-base outline-none ${
+                      isCompletingPending ? 'bg-slate-200/50 dark:bg-slate-800/50 text-slate-500 cursor-not-allowed' : 'text-slate-900 dark:text-white'
+                    }`}
                   />
                   <span className="absolute left-3.5 top-3.5 text-slate-400 font-bold font-mono text-sm">₹</span>
                 </div>
@@ -298,7 +337,7 @@ const RecordForm = ({ onSave, onCancel, initialData, lastRecord, allRecords, isE
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider flex items-center justify-between">
-                    <span>Start / Previous Reading (km)</span>
+                    <span>{isCompletingPending ? 'Previous Reserve Reading (km)' : isPendingRefill ? 'Reserve Reading at Pump (km)' : 'Start / Previous Reading (km)*'}</span>
                     {lastRecord && !isEditMode && (
                       <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold font-sans">Auto-retrieved from last log</span>
                     )}
@@ -311,30 +350,38 @@ const RecordForm = ({ onSave, onCancel, initialData, lastRecord, allRecords, isE
                       placeholder="e.g. 3891"
                       value={formData.oldReading}
                       onChange={handleChange}
-                      className="w-full glass-input rounded-2xl p-3.5 pl-10 font-bold font-mono text-slate-900 dark:text-white text-base outline-none"
+                      disabled={isCompletingPending}
+                      className={`w-full glass-input rounded-2xl p-3.5 pl-10 font-bold font-mono text-base outline-none ${
+                        isCompletingPending ? 'bg-slate-200/50 dark:bg-slate-800/50 text-slate-500 cursor-not-allowed' : 'text-slate-900 dark:text-white'
+                      }`}
                     />
                     <Gauge size={18} className="absolute left-3.5 top-4 text-slate-400" />
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider">Current Reading at Pump (km)</label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      step="any"
-                      name="newReading"
-                      placeholder="e.g. 4130"
-                      value={formData.newReading}
-                      onChange={handleChange}
-                      className="w-full bg-cyan-500/10 dark:bg-cyan-950/20 border border-cyan-500/40 rounded-2xl p-4 pl-10 focus:ring-2 focus:ring-cyan-400 outline-none font-black text-xl text-cyan-700 dark:text-cyan-300 font-mono"
-                    />
-                    <Gauge size={20} className="absolute left-3.5 top-4 text-cyan-600 dark:text-cyan-400" />
+                {!isPendingRefill && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-cyan-600 dark:text-cyan-400 uppercase tracking-wider">
+                      Current Reading at Next Reserve (km)*
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="any"
+                        name="newReading"
+                        placeholder="e.g. 4130"
+                        value={formData.newReading}
+                        onChange={handleChange}
+                        autoFocus={isCompletingPending}
+                        className="w-full bg-cyan-500/10 dark:bg-cyan-950/20 border border-cyan-500/40 rounded-2xl p-4 pl-10 focus:ring-2 focus:ring-cyan-400 outline-none font-black text-xl text-cyan-700 dark:text-cyan-300 font-mono"
+                      />
+                      <Gauge size={20} className="absolute left-3.5 top-4 text-cyan-600 dark:text-cyan-400" />
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Real-time Distance Calculation pill */}
-                {parseFloat(calculations.totalDriven) > 0 && (
+                {!isPendingRefill && parseFloat(calculations.totalDriven) > 0 && (
                   <div className="p-3 bg-cyan-500/10 border border-cyan-500/20 rounded-xl flex items-center justify-between text-xs font-mono">
                     <span className="text-slate-500 dark:text-slate-400">Total Distance This Tank:</span>
                     <span className="font-extrabold text-cyan-600 dark:text-cyan-400 text-sm">+{calculations.totalDriven} km</span>
@@ -348,93 +395,67 @@ const RecordForm = ({ onSave, onCancel, initialData, lastRecord, allRecords, isE
             <div className="md:col-span-5 flex flex-col gap-6">
               
               <div className="glass-panel-glow rounded-3xl p-6 border border-slate-200/80 dark:border-white/10 shadow-2xl relative overflow-hidden space-y-5">
-                <div className="flex items-center justify-between border-b border-slate-200 dark:border-white/10 pb-3">
-                  <span className="text-xs font-black tracking-wider text-slate-700 dark:text-slate-300 uppercase flex items-center gap-1.5">
-                    <Zap size={14} className="text-emerald-500 dark:text-emerald-400" /> Telemetry Compute
+                <div className="flex items-center justify-between">
+                  <span className="text-xs uppercase font-extrabold tracking-widest text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <Sparkles size={14} className="text-emerald-500 dark:text-emerald-400" /> Telemetry Compute
                   </span>
-                  <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${efficiencyScore.bg}`}>
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${efficiencyScore.bg}`}>
                     {efficiencyScore.text}
                   </span>
                 </div>
 
-                {/* Fuel Volume */}
-                <div className="glass-card p-4 rounded-2xl border border-slate-200/60 dark:border-white/5 flex items-center justify-between">
-                  <div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider">Fuel Dispensed</p>
-                    <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
-                      {calculations.quantity} <span className="text-xs font-bold text-slate-400">LITERS</span>
+                <div className="grid grid-cols-2 gap-3 text-center">
+                  <div className="glass-card p-3 rounded-2xl border border-slate-200/80 dark:border-white/10">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Fuel Vol.</span>
+                    <p className="text-lg md:text-xl font-black text-slate-900 dark:text-white font-mono mt-0.5">
+                      {calculations.quantity} <span className="text-xs font-normal text-slate-500">L</span>
                     </p>
                   </div>
-                  <div className="w-12 h-12 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                    <Fuel size={22} />
+
+                  <div className="glass-card p-3 rounded-2xl border border-slate-200/80 dark:border-white/10">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Leg Distance</span>
+                    <p className="text-lg md:text-xl font-black text-cyan-600 dark:text-cyan-400 font-mono mt-0.5">
+                      {isPendingRefill ? '--' : `${calculations.totalDriven} km`}
+                    </p>
+                  </div>
+
+                  <div className="glass-card p-3 rounded-2xl border border-slate-200/80 dark:border-white/10">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Efficiency</span>
+                    <p className="text-lg md:text-xl font-black text-emerald-600 dark:text-emerald-400 font-mono mt-0.5">
+                      {isPendingRefill ? 'Pending' : `${calculations.mileage} km/L`}
+                    </p>
+                  </div>
+
+                  <div className="glass-card p-3 rounded-2xl border border-slate-200/80 dark:border-white/10">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Burn Cost</span>
+                    <p className="text-lg md:text-xl font-black text-amber-600 dark:text-amber-400 font-mono mt-0.5">
+                      {isPendingRefill ? '--' : `₹${calculations.ratePerKm}/km`}
+                    </p>
                   </div>
                 </div>
 
-                {/* Distance Driven */}
-                <div className="glass-card p-4 rounded-2xl border border-slate-200/60 dark:border-white/5 flex items-center justify-between">
-                  <div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider">Leg Distance</p>
-                    <p className="text-2xl font-black text-cyan-600 dark:text-cyan-400 font-mono mt-0.5">
-                      {calculations.totalDriven} <span className="text-xs font-bold text-slate-400">KM</span>
-                    </p>
-                  </div>
-                  <div className="w-12 h-12 bg-cyan-500/10 border border-cyan-500/20 rounded-2xl flex items-center justify-center text-cyan-600 dark:text-cyan-400">
-                    <Gauge size={22} />
-                  </div>
+                <div className="p-3.5 bg-slate-100/80 dark:bg-white/5 rounded-2xl border border-slate-200/80 dark:border-white/10 text-xs text-slate-500 dark:text-slate-400 space-y-1">
+                  <p className="font-bold text-slate-700 dark:text-slate-300">Methodology:</p>
+                  <p className="text-[11px] leading-relaxed">
+                    {isPendingRefill
+                      ? 'Reserve refill logged. When you next hit reserve, tap "Complete Leg" to calculate exact mileage.'
+                      : 'Accurate reserve-to-reserve calculation. Distance and mileage automatically calculated.'}
+                  </p>
                 </div>
 
-                {/* Mileage Result */}
-                <div className="glass-card p-4 rounded-2xl border border-slate-200/60 dark:border-white/5 flex items-center justify-between">
-                  <div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider">Leg Fuel Mileage</p>
-                    <p className="text-3xl font-black text-amber-600 dark:text-amber-400 font-mono mt-0.5">
-                      {calculations.mileage} <span className="text-xs font-bold text-slate-400">KM / L</span>
-                    </p>
-                  </div>
-                  <div className="w-12 h-12 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-center text-amber-600 dark:text-amber-400">
-                    <Zap size={22} />
-                  </div>
-                </div>
-
-                {/* Running Cost */}
-                <div className="glass-card p-4 rounded-2xl border border-slate-200/60 dark:border-white/5 flex items-center justify-between">
-                  <div>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider">Per-Kilometer Expense</p>
-                    <p className="text-2xl font-black text-purple-600 dark:text-purple-400 font-mono mt-0.5">
-                      ₹{calculations.ratePerKm} <span className="text-xs font-bold text-slate-400">/ KM</span>
-                    </p>
-                  </div>
-                  <div className="w-12 h-12 bg-purple-500/10 border border-purple-500/20 rounded-2xl flex items-center justify-center text-purple-600 dark:text-purple-400">
-                    <IndianRupee size={20} />
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex gap-3 mt-auto">
-                <button
-                  type="button"
-                  onClick={onCancel}
-                  className="w-1/3 py-4 bg-slate-200 hover:bg-slate-300 dark:bg-white/5 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white font-bold rounded-2xl transition-colors border border-slate-300 dark:border-white/10 text-sm"
-                >
-                  Cancel
-                </button>
+                {/* Primary Submit Button */}
                 <button
                   type="submit"
-                  disabled={isSyncing}
-                  className="w-2/3 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 py-4 rounded-2xl font-black text-base shadow-xl shadow-emerald-500/25 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-70"
+                  className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-sm tracking-wide shadow-xl shadow-emerald-500/25 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  {isSyncing ? (
-                    <>
-                      <RefreshCw size={18} className="animate-spin" />
-                      Calibrating...
-                    </>
-                  ) : (
-                    <>
-                      <Save size={18} />
-                      {isEditMode ? 'Update Log' : 'Save To Telemetry'}
-                    </>
-                  )}
+                  <Save size={18} />
+                  {isCompletingPending 
+                    ? 'Finalize & Save Completed Leg' 
+                    : isPendingRefill 
+                      ? 'Save Pending Refill' 
+                      : isEditMode 
+                        ? 'Update Refill Record' 
+                        : 'Commit Refill to Cloud'}
                 </button>
               </div>
 
