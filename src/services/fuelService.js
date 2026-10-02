@@ -322,14 +322,19 @@ export const fuelService = {
   async bulkImportRecords(vehicleId, userId, recordsList) {
     if (!vehicleId || !recordsList || recordsList.length === 0) return [];
 
-    const rows = recordsList.map(r => {
-      const startKm = parseFloat(r.previous_reserve_odometer ?? r.oldReading ?? r.start_odometer_km ?? 0);
-      const endKm = parseFloat(r.current_reserve_odometer ?? r.newReading ?? r.end_odometer_km ?? 0);
-      const costPerL = parseFloat(r.rate_per_litre ?? r.cost ?? r.fuel_rate_per_litre ?? r.rate ?? 105);
-      const totalCost = parseFloat(r.amount ?? r.total_cost ?? 0);
-      const dateVal = r.refill_at || r.fuel_datetime || (r.date ? new Date(r.date).toISOString() : new Date().toISOString());
+    const rows = [];
+    for (const r of recordsList) {
+      const startKm = parseFloat(r.previous_reserve_odometer ?? r.oldReading ?? r.start_odometer_km ?? NaN);
+      const endKm = parseFloat(r.current_reserve_odometer ?? r.newReading ?? r.end_odometer_km ?? NaN);
+      const costPerL = parseFloat(r.rate_per_litre ?? r.cost ?? r.fuel_rate_per_litre ?? r.rate ?? NaN);
+      const totalCost = parseFloat(r.amount ?? r.total_cost ?? NaN);
+      const dateVal = r.refill_at || r.fuel_datetime || (r.date ? new Date(r.date).toISOString() : null);
 
-      return {
+      if (!dateVal || isNaN(totalCost) || totalCost <= 0 || isNaN(startKm) || startKm < 0 || isNaN(endKm) || endKm <= startKm || isNaN(costPerL) || costPerL <= 0) {
+        continue;
+      }
+
+      rows.push({
         vehicle_id: vehicleId,
         status: 'completed',
         previous_reserve_odometer: startKm,
@@ -338,8 +343,8 @@ export const fuelService = {
         amount: totalCost,
         refill_at: dateVal,
         notes: r.notes || 'Imported record',
-      };
-    });
+      });
+    }
 
     const { data, error } = await supabase
       .from('fuel_records')

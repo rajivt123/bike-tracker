@@ -348,7 +348,7 @@ function AppContent() {
 
       for (const row of rawRows) {
         const dateRaw = row.refill_at || row.fuel_datetime || row.date || findVal(row, ['refill', 'datetime', 'date', 'time', 'day']);
-        const dateStr = normalizeDate(dateRaw) || new Date().toISOString().split('T')[0];
+        const dateStr = normalizeDate(dateRaw);
 
         const prevOdo = parseFloat(
           row.previous_reserve_odometer ??
@@ -371,7 +371,7 @@ function AppContent() {
           row.fuel_rate_per_litre ??
           row.cost ??
           findVal(row, ['rateperlitre', 'rateperliter', 'fuelrate', 'rate', 'perliter', 'perlitre', 'fuelprice']) ??
-          105
+          NaN
         );
 
         const amt = parseFloat(
@@ -384,8 +384,8 @@ function AppContent() {
         const notes = row.notes || findVal(row, ['notes', 'comment', 'description', 'remarks']) || 'Imported from file';
 
         // Reserve-to-Reserve Business Rules:
-        // Must have: amount > 0, rate > 0, prevOdo >= 0, currOdo > prevOdo
-        if (isNaN(amt) || amt <= 0 || isNaN(prevOdo) || prevOdo < 0 || isNaN(currOdo) || currOdo <= prevOdo || isNaN(rate) || rate <= 0) {
+        // Must have: valid date, amount > 0, rate > 0, prevOdo >= 0, currOdo > prevOdo
+        if (!dateStr || isNaN(amt) || amt <= 0 || isNaN(prevOdo) || prevOdo < 0 || isNaN(currOdo) || currOdo <= prevOdo || isNaN(rate) || rate <= 0) {
           invalidCount++;
           continue;
         }
@@ -417,10 +417,14 @@ function AppContent() {
           await updateVehicle(activeVehicle.id, { current_odometer_km: maxEndOdo });
         }
 
-        alert(`Import Complete:\n• Total rows scanned: ${totalRows}\n• Successfully imported: ${validImportRows.length}\n• Duplicates skipped: ${duplicateCount}\n• Invalid rows skipped: ${invalidCount}`);
+        let msg = `Import Complete:\n� Total rows scanned: ${totalRows}\n� Successfully imported: ${validImportRows.length}\n� Duplicates skipped: ${duplicateCount}\n� Invalid rows skipped: ${invalidCount}`;
+        if (invalidCount > 0) {
+          msg += `\n\nInvalid rows were skipped because required date, amount, rate, or reserve-to-reserve odometer data was missing or invalid.`;
+        }
+        alert(msg);
         setView('detailed_list');
       } else {
-        alert(`No new records imported.\n• Total rows scanned: ${totalRows}\n• Duplicates skipped: ${duplicateCount}\n• Invalid rows skipped: ${invalidCount}\n\nNote: Valid records require Amount > 0, Rate > 0, and End Odometer > Start Odometer.`);
+        alert(`No new records imported.\n� Total rows scanned: ${totalRows}\n� Duplicates skipped: ${duplicateCount}\n� Invalid rows skipped: ${invalidCount}\n\nInvalid rows were skipped because required date, amount, rate, or reserve-to-reserve odometer data was missing or invalid.`);
       }
     } catch (err) {
       console.error("[handleImport] Error:", err);
