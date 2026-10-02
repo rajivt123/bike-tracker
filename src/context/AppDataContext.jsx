@@ -241,12 +241,20 @@ export const AppDataProvider = ({ children }) => {
     return pending;
   };
 
-  const completePendingRecord = async (endOdometerKm) => {
+  const completePendingRecord = async (endOdometerKm, additionalUpdates = {}) => {
     if (!pendingFuelRecord?.id || !activeVehicle?.id) return;
+    
+    const dbUpdates = {};
+    if (additionalUpdates.amount !== undefined) dbUpdates.amount = parseFloat(additionalUpdates.amount);
+    if (additionalUpdates.rate !== undefined) dbUpdates.rate_per_litre = parseFloat(additionalUpdates.rate);
+    if (additionalUpdates.date) dbUpdates.refill_at = new Date(additionalUpdates.date).toISOString();
+    if (additionalUpdates.notes !== undefined) dbUpdates.notes = additionalUpdates.notes;
+
     const completed = await fuelService.completePendingFuelRecord(
       pendingFuelRecord.id,
       activeVehicle.id,
-      endOdometerKm
+      endOdometerKm,
+      dbUpdates
     );
     setPendingFuelRecord(null);
     setRecords(prev => [...prev, completed].sort((a, b) => new Date(a.date) - new Date(b.date)));

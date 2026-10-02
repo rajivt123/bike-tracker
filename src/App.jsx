@@ -180,7 +180,7 @@ function AppContent() {
     try {
       if (editingRecord) {
         if (editingRecord.status === 'pending' && savedData.newReading) {
-          await completePendingRecord(savedData.newReading);
+          await completePendingRecord(savedData.newReading, savedData);
           setView('home');
         } else {
           await updateFuelRecord(savedData.id, savedData);

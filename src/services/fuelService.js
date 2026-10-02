@@ -118,7 +118,7 @@ export const fuelService = {
         startKm = 0;
       }
     }
-    const costPerL = parseFloat(payload.rate_per_litre ?? payload.fuel_rate_per_litre ?? payload.cost);
+    const costPerL = parseFloat(payload.rate_per_litre ?? payload.fuel_rate_per_litre ?? payload.cost ?? payload.rate);
     const totalCost = parseFloat(payload.amount ?? payload.total_cost);
     const refillDate = payload.refill_at || payload.fuel_datetime || (payload.date ? new Date(payload.date).toISOString() : new Date().toISOString());
 
@@ -196,7 +196,7 @@ export const fuelService = {
 
     const startKm = parseFloat(payload.previous_reserve_odometer ?? payload.start_odometer_km ?? payload.oldReading);
     const endKm = parseFloat(payload.current_reserve_odometer ?? payload.end_odometer_km ?? payload.newReading);
-    const costPerL = parseFloat(payload.rate_per_litre ?? payload.fuel_rate_per_litre ?? payload.cost);
+    const costPerL = parseFloat(payload.rate_per_litre ?? payload.fuel_rate_per_litre ?? payload.cost ?? payload.rate);
     const totalCost = parseFloat(payload.amount ?? payload.total_cost);
     const refillDate = payload.refill_at || payload.fuel_datetime || (payload.date ? new Date(payload.date).toISOString() : new Date().toISOString());
 
@@ -239,7 +239,7 @@ export const fuelService = {
 
     const startKm = updates.previous_reserve_odometer !== undefined ? parseFloat(updates.previous_reserve_odometer) : (updates.start_odometer_km !== undefined ? parseFloat(updates.start_odometer_km) : (updates.oldReading !== undefined ? parseFloat(updates.oldReading) : undefined));
     const endKm = updates.current_reserve_odometer !== undefined ? parseFloat(updates.current_reserve_odometer) : (updates.end_odometer_km !== undefined ? parseFloat(updates.end_odometer_km) : (updates.newReading !== undefined ? parseFloat(updates.newReading) : undefined));
-    const costPerL = updates.rate_per_litre !== undefined ? parseFloat(updates.rate_per_litre) : (updates.fuel_rate_per_litre !== undefined ? parseFloat(updates.fuel_rate_per_litre) : (updates.cost !== undefined ? parseFloat(updates.cost) : undefined));
+    const costPerL = updates.rate_per_litre !== undefined ? parseFloat(updates.rate_per_litre) : (updates.fuel_rate_per_litre !== undefined ? parseFloat(updates.fuel_rate_per_litre) : (updates.cost !== undefined ? parseFloat(updates.cost) : (updates.rate !== undefined ? parseFloat(updates.rate) : undefined)));
     const totalCost = updates.amount !== undefined ? parseFloat(updates.amount) : (updates.total_cost !== undefined ? parseFloat(updates.total_cost) : undefined);
 
     const payload = {
@@ -325,7 +325,7 @@ export const fuelService = {
     const rows = recordsList.map(r => {
       const startKm = parseFloat(r.previous_reserve_odometer ?? r.oldReading ?? r.start_odometer_km ?? 0);
       const endKm = parseFloat(r.current_reserve_odometer ?? r.newReading ?? r.end_odometer_km ?? 0);
-      const costPerL = parseFloat(r.rate_per_litre ?? r.cost ?? r.fuel_rate_per_litre ?? 105);
+      const costPerL = parseFloat(r.rate_per_litre ?? r.cost ?? r.fuel_rate_per_litre ?? r.rate ?? 105);
       const totalCost = parseFloat(r.amount ?? r.total_cost ?? 0);
       const dateVal = r.refill_at || r.fuel_datetime || (r.date ? new Date(r.date).toISOString() : new Date().toISOString());
 
