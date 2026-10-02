@@ -39,7 +39,7 @@ export default function TripsScreen({ onBack }) {
     maxSpeedKmh: 0,
     avgSpeedKmh: 0,
     totalDistanceKm: 0,
-    heading: null,
+
     accuracy: null,
   });
   const [durationSeconds, setDurationSeconds] = useState(0);
@@ -149,7 +149,7 @@ export default function TripsScreen({ onBack }) {
       currentTripRecordRef.current = trip;
 
       // 3. Start timer
-      const elapsed = Math.max(0, Math.floor((Date.now() - new Date(trip.start_time).getTime()) / 1000));
+      const elapsed = Math.max(0, Math.floor((Date.now() - new Date(trip.started_at).getTime()) / 1000));
       setDurationSeconds(elapsed);
       timerIntervalRef.current = setInterval(() => {
         setDurationSeconds((prev) => prev + 1);
@@ -169,8 +169,7 @@ export default function TripsScreen({ onBack }) {
             latitude: pos.coords.latitude,
             longitude: pos.coords.longitude,
             speed_kmh: stats.currentSpeedKmh,
-            heading: pos.coords.heading,
-            accuracy_meters: pos.coords.accuracy,
+            accuracy_m: pos.coords.accuracy,
             recorded_at: new Date().toISOString(),
           });
 
@@ -233,7 +232,7 @@ export default function TripsScreen({ onBack }) {
       const finalStats = {
         distance_km: telemetry.totalDistanceKm,
         duration_seconds: durationSeconds,
-        avg_speed_kmh: telemetry.avgSpeedKmh,
+        average_speed_kmh: telemetry.avgSpeedKmh,
         max_speed_kmh: telemetry.maxSpeedKmh,
       };
 
@@ -272,7 +271,7 @@ export default function TripsScreen({ onBack }) {
         maxSpeedKmh: 0,
         avgSpeedKmh: 0,
         totalDistanceKm: 0,
-        heading: null,
+    
         accuracy: null,
       });
     }
@@ -319,7 +318,7 @@ export default function TripsScreen({ onBack }) {
               <div>
                 <p className="font-extrabold text-sm text-slate-900 dark:text-white">Active Trip In Progress</p>
                 <p className="text-slate-600 dark:text-slate-400 mt-0.5">
-                  Started at {new Date(activeTrip.start_time).toLocaleTimeString()}
+                  Started at {new Date(activeTrip.started_at).toLocaleTimeString()}
                 </p>
               </div>
             </div>
@@ -483,7 +482,7 @@ export default function TripsScreen({ onBack }) {
           ) : (
             <div className="space-y-2.5">
               {trips.map((trip) => {
-                const dateStr = trip.start_time ? new Date(trip.start_time).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown date';
+                const dateStr = trip.started_at ? new Date(trip.started_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown date';
                 return (
                   <div
                     key={trip.id}
@@ -502,7 +501,7 @@ export default function TripsScreen({ onBack }) {
                           <span>•</span>
                           <span>{formatDuration(trip.duration_seconds || 0)}</span>
                           <span>•</span>
-                          <span>Avg {parseFloat(trip.avg_speed_kmh || 0).toFixed(0)} km/h</span>
+                          <span>Avg {parseFloat(trip.average_speed_kmh || 0).toFixed(0)} km/h</span>
                           <span>•</span>
                           <span>Top {parseFloat(trip.max_speed_kmh || 0).toFixed(0)} km/h</span>
                         </div>

@@ -94,7 +94,7 @@ export class SpeedometerTracker {
       totalDistanceKm: Math.round(this.totalDistanceKm * 100) / 100,
       latitude: coords.latitude,
       longitude: coords.longitude,
-      heading: coords.heading,
+
       accuracy: coords.accuracy,
     };
   }

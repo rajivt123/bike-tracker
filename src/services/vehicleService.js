@@ -70,9 +70,7 @@ export const vehicleService = {
     try {
       await supabase.from('vehicle_service_settings').upsert({
         vehicle_id: data.id,
-        user_id: userId,
         interval_km: 2000,
-        last_service_odometer_km: data.current_odometer_km || 0,
       });
     } catch (settingErr) {
       console.warn('[vehicleService] Could not initialize service settings:', settingErr);

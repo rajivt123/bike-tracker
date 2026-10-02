@@ -85,7 +85,6 @@ export default function ServiceRepairScreen({ onBack }) {
     e.preventDefault();
     await updateServiceSettings({
       interval_km: intervalKm,
-      last_service_odometer_km: serviceSettings?.last_service_odometer_km || 0,
     });
     setShowSettingsModal(false);
   };

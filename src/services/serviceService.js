@@ -14,18 +14,16 @@ export const serviceService = {
       console.error('[serviceService] Error fetching service settings:', error);
       throw error;
     }
-    return data || { interval_km: 2000, last_service_odometer_km: 0 };
+    return data || { interval_km: 2000 };
   },
 
   async updateServiceSettings(vehicleId, userId, settings) {
-    if (!vehicleId || !userId) throw new Error('Vehicle ID and User ID required');
+    if (!vehicleId) throw new Error('Vehicle ID required');
     const { data, error } = await supabase
       .from('vehicle_service_settings')
       .upsert({
         vehicle_id: vehicleId,
-        user_id: userId,
         interval_km: parseInt(settings.interval_km || 2000, 10),
-        last_service_odometer_km: parseFloat(settings.last_service_odometer_km || 0),
         updated_at: new Date().toISOString(),
       }, { onConflict: 'vehicle_id' })
       .select()
@@ -54,7 +52,7 @@ export const serviceService = {
   },
 
   async createServiceRecord(vehicleId, userId, record) {
-    if (!vehicleId || !userId) throw new Error('Vehicle ID and User ID required');
+    if (!vehicleId) throw new Error('Vehicle ID required');
 
     const odoKm = parseFloat(record.odometer_km);
     const amountVal = parseFloat(record.amount || 0);
@@ -64,7 +62,6 @@ export const serviceService = {
       .from('service_records')
       .insert([{
         vehicle_id: vehicleId,
-        user_id: userId,
         odometer_km: odoKm,
         amount: amountVal,
         service_date: serviceDate,
@@ -76,20 +73,6 @@ export const serviceService = {
     if (error) {
       console.error('[serviceService] Error creating service record:', error);
       throw error;
-    }
-
-    // Automatically update last_service_odometer_km in vehicle_service_settings
-    try {
-      await supabase
-        .from('vehicle_service_settings')
-        .upsert({
-          vehicle_id: vehicleId,
-          user_id: userId,
-          last_service_odometer_km: odoKm,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'vehicle_id' });
-    } catch (e) {
-      console.warn('[serviceService] Could not update last_service_odometer_km:', e);
     }
 
     return data;

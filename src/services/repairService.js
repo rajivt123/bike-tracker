@@ -18,7 +18,7 @@ export const repairService = {
   },
 
   async createRepair(vehicleId, userId, payload) {
-    if (!vehicleId || !userId) throw new Error('Vehicle ID and User ID required');
+    if (!vehicleId) throw new Error('Vehicle ID required');
 
     const odoKm = payload.odometer_km ? parseFloat(payload.odometer_km) : null;
     const amountVal = parseFloat(payload.amount || 0);
@@ -28,7 +28,6 @@ export const repairService = {
       .from('repair_records')
       .insert([{
         vehicle_id: vehicleId,
-        user_id: userId,
         odometer_km: odoKm,
         description: payload.description || 'General Repair',
         amount: amountVal,

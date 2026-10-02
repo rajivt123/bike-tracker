@@ -311,11 +311,6 @@ export const AppDataProvider = ({ children }) => {
     if (!activeVehicle?.id || !user) throw new Error('No active vehicle');
     const created = await serviceService.createServiceRecord(activeVehicle.id, user.id, serviceData);
     setServiceRecords(prev => [created, ...prev]);
-    // Refresh settings since last_service_odometer_km was updated
-    setServiceSettings(prev => ({
-      ...prev,
-      last_service_odometer_km: parseFloat(serviceData.odometer_km),
-    }));
     return created;
   };
 
