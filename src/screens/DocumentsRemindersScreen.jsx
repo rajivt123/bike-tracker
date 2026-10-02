@@ -33,7 +33,7 @@ export default function DocumentsRemindersScreen({ onBack }) {
 
   // Document form
   const [docTitle, setDocTitle] = useState('');
-  const [docType, setDocType] = useState('rc');
+  const [docType, setDocType] = useState('insurance');
   const [docExpiry, setDocExpiry] = useState('');
   const [docFile, setDocFile] = useState(null);
   const [docNotes, setDocNotes] = useState('');
@@ -129,7 +129,7 @@ export default function DocumentsRemindersScreen({ onBack }) {
                   : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
-              <Bell size={14} /> Reminders ({reminders.filter(r => r.status === 'pending').length})
+              <Bell size={14} /> Reminders ({reminders.filter(r => r.status === 'active').length})
             </button>
           </div>
 
@@ -324,11 +324,8 @@ export default function DocumentsRemindersScreen({ onBack }) {
                     onChange={(e) => setDocType(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-white/10 text-sm"
                   >
-                    <option value="rc">RC (Registration)</option>
                     <option value="insurance">Insurance Policy</option>
                     <option value="puc">PUC Certificate</option>
-                    <option value="license">Driver's License</option>
-                    <option value="invoice">Purchase / Service Invoice</option>
                     <option value="other">Other Document</option>
                   </select>
                 </div>

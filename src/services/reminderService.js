@@ -18,7 +18,7 @@ export const reminderService = {
   },
 
   async createReminder(vehicleId, userId, payload) {
-    if (!vehicleId || !userId) throw new Error('Vehicle ID and User ID required');
+    if (!vehicleId) throw new Error('Vehicle ID required');
 
     const dueKm = payload.due_odometer_km ? parseFloat(payload.due_odometer_km) : null;
 
@@ -26,12 +26,11 @@ export const reminderService = {
       .from('reminders')
       .insert([{
         vehicle_id: vehicleId,
-        user_id: userId,
         title: payload.title || 'Vehicle Reminder',
         reminder_type: payload.reminder_type || 'custom',
         due_date: payload.due_date || null,
         due_odometer_km: dueKm,
-        status: payload.status || 'pending',
+        status: payload.status || 'active',
         notes: payload.notes || '',
       }])
       .select()

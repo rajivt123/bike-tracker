@@ -311,7 +311,7 @@ const Dashboard = ({ records = [], userProfile, onNavigate, onCompletePendingRef
             </div>
             <div>
               <h3 className="font-bold text-sm text-slate-900 dark:text-white">Vault & Reminders</h3>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">{reminders.filter(r => r.status === 'pending').length} active alerts</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">{reminders.filter(r => r.status === 'active').length} active alerts</p>
             </div>
           </button>
 

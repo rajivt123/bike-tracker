@@ -15,20 +15,26 @@ export const documentService = {
       throw error;
     }
 
-    // Attach fresh signed URLs (1 hour expiry) for documents with file_path
+    // Attach fresh signed URLs (1 hour expiry) for documents with storage_path
     const docsWithSignedUrls = await Promise.all(
       (data || []).map(async (doc) => {
-        if (!doc.file_path) return { ...doc, downloadUrl: null };
+        const uiDoc = {
+          ...doc,
+          expiry_date: doc.expires_on,
+          file_path: doc.storage_path
+        };
+        
+        if (!doc.storage_path) return { ...uiDoc, downloadUrl: null };
         try {
           const { data: signed } = await supabase.storage
-            .from('user-files')
-            .createSignedUrl(doc.file_path, 3600);
+            .from(doc.storage_bucket || 'user-files')
+            .createSignedUrl(doc.storage_path, 3600);
           return {
-            ...doc,
+            ...uiDoc,
             downloadUrl: signed?.signedUrl || null,
           };
         } catch {
-          return { ...doc, downloadUrl: null };
+          return { ...uiDoc, downloadUrl: null };
         }
       })
     );
@@ -39,14 +45,14 @@ export const documentService = {
   async uploadDocument(vehicleId, userId, { title, document_type, expiry_date, notes, file }) {
     if (!vehicleId || !userId) throw new Error('Vehicle ID and User ID required');
 
-    let filePath = null;
+    let storagePath = null;
     if (file) {
       const ext = file.name ? file.name.split('.').pop() : 'pdf';
-      filePath = `${userId}/documents/${vehicleId}_${Date.now()}.${ext}`;
+      storagePath = `${userId}/documents/${vehicleId}_${Date.now()}.${ext}`;
 
       const { error: uploadError } = await supabase.storage
         .from('user-files')
-        .upload(filePath, file, { upsert: true });
+        .upload(storagePath, file, { upsert: true });
 
       if (uploadError) {
         console.error('[documentService] Error uploading file to user-files bucket:', uploadError);
@@ -58,11 +64,13 @@ export const documentService = {
       .from('documents')
       .insert([{
         vehicle_id: vehicleId,
-        user_id: userId,
         title: title || 'Vehicle Document',
         document_type: document_type || 'other',
-        expiry_date: expiry_date || null,
-        file_path: filePath,
+        expires_on: expiry_date || null,
+        storage_bucket: storagePath ? 'user-files' : null,
+        storage_path: storagePath,
+        mime_type: file ? file.type : null,
+        file_size_bytes: file ? file.size : null,
         notes: notes || '',
       }])
       .select()
@@ -70,18 +78,30 @@ export const documentService = {
 
     if (error) {
       console.error('[documentService] Error saving document record:', error);
+      if (storagePath) {
+        try {
+          await supabase.storage.from('user-files').remove([storagePath]);
+        } catch (cleanupErr) {
+          console.warn('[documentService] Cleanup of orphaned file failed:', cleanupErr);
+        }
+      }
       throw error;
     }
 
     let downloadUrl = null;
-    if (filePath) {
+    if (storagePath) {
       const { data: signed } = await supabase.storage
         .from('user-files')
-        .createSignedUrl(filePath, 3600);
+        .createSignedUrl(storagePath, 3600);
       downloadUrl = signed?.signedUrl || null;
     }
 
-    return { ...data, downloadUrl };
+    return { 
+      ...data, 
+      expiry_date: data.expires_on,
+      file_path: data.storage_path,
+      downloadUrl 
+    };
   },
 
   async deleteDocument(documentId, filePath = null) {
