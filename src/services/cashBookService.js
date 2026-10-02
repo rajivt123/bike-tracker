@@ -46,8 +46,9 @@ export const cashBookService = {
       entry_type: payload.entry_type || 'expense', // 'income' | 'expense'
       amount: amountVal,
       category: payload.category || 'General',
-      payment_mode: payload.payment_mode || 'Cash',
       description: payload.description || '',
+      reference: payload.reference || null,
+      notes: payload.notes || '',
     };
 
     const { data, error } = await supabase
@@ -73,6 +74,7 @@ export const cashBookService = {
     if (updatePayload.amount !== undefined) {
       updatePayload.amount = parseFloat(updatePayload.amount);
     }
+    delete updatePayload.payment_mode;
 
     const { data, error } = await supabase
       .from('cash_book_entries')

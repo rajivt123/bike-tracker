@@ -32,7 +32,6 @@ export default function CashBookScreen() {
   const [entryType, setEntryType] = useState('expense');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('General');
-  const [paymentMode, setPaymentMode] = useState('UPI');
   const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0]);
   const [description, setDescription] = useState('');
 
@@ -50,7 +49,6 @@ export default function CashBookScreen() {
         entry_type: entryType,
         amount: parseFloat(amount),
         category,
-        payment_mode: paymentMode,
         entry_date: entryDate,
         description,
       });
@@ -220,11 +218,6 @@ export default function CashBookScreen() {
                       </div>
                       <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-2 font-mono">
                         <span>{item.entry_date}</span>
-                        {item.payment_mode && (
-                          <span className="px-1.5 py-0.2 rounded bg-slate-200/80 dark:bg-white/5 text-[10px]">
-                            {item.payment_mode}
-                          </span>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -322,30 +315,15 @@ export default function CashBookScreen() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">Payment Mode</label>
-                  <select
-                    value={paymentMode}
-                    onChange={(e) => setPaymentMode(e.target.value)}
+                  <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={entryDate}
+                    onChange={(e) => setEntryDate(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-white/10 text-sm"
-                  >
-                    <option value="UPI">UPI / GPay</option>
-                    <option value="Cash">Cash</option>
-                    <option value="Credit Card">Credit Card</option>
-                    <option value="Debit Card">Debit Card</option>
-                    <option value="Net Banking">Net Banking</option>
-                  </select>
+                  />
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 dark:text-slate-300 uppercase mb-1">Date</label>
-                <input
-                  type="date"
-                  required
-                  value={entryDate}
-                  onChange={(e) => setEntryDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-white/10 text-sm"
-                />
               </div>
 
               <div>
