@@ -35,6 +35,7 @@ import TripsScreen from './screens/TripsScreen';
 import ServiceRepairScreen from './screens/ServiceRepairScreen';
 import DocumentsRemindersScreen from './screens/DocumentsRemindersScreen';
 import CashBookScreen from './screens/CashBookScreen';
+import CashBookReportsScreen from './screens/CashBookReportsScreen';
 
 function AppContent() {
   const { user, profile, loading: authLoading, updateProfile } = useAuth();
@@ -521,7 +522,9 @@ function AppContent() {
       case 'documents':
         return <DocumentsRemindersScreen onBack={() => setView('home')} />;
       case 'cash_book':
-        return <CashBookScreen />;
+        return <CashBookScreen onOpenReports={() => setView('cash_book_reports')} />;
+      case 'cash_book_reports':
+        return <CashBookReportsScreen onBack={() => setView('cash_book')} />;
       case 'history':
         return (
           <HistoryReport

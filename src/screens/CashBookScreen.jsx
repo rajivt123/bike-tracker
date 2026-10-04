@@ -46,7 +46,7 @@ const INCOME_CATEGORIES = [
   'Other'
 ];
 
-export default function CashBookScreen() {
+export default function CashBookScreen({ onOpenReports }) {
   const { 
     financialAccounts, 
     cashBookCategories, 
@@ -74,7 +74,6 @@ export default function CashBookScreen() {
   // Modals
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
-  const [showReportsModal, setShowReportsModal] = useState(false);
   const [editingEntry, setEditingEntry] = useState(null);
   const [editingAccount, setEditingAccount] = useState(null);
 
@@ -416,23 +415,6 @@ export default function CashBookScreen() {
     effectiveIncomeCategories
   ]);
 
-  // Summary for Reports Modal (Phase 2 preview)
-  const reportsSummary = useMemo(() => {
-    let income = 0;
-    let expense = 0;
-    (ledgerRows || []).forEach(e => {
-      const amt = parseFloat(e.amount) || 0;
-      if (e.entry_type === 'income') income += amt;
-      else if (e.entry_type === 'expense') expense += amt;
-    });
-    return {
-      income,
-      expense,
-      net: income - expense,
-      count: ledgerRows.length,
-    };
-  }, [ledgerRows]);
-
   // Open modal for recording a new transaction
   const openNewTransactionModal = (type = 'expense') => {
     setEditingEntry(null);
@@ -650,7 +632,7 @@ export default function CashBookScreen() {
               <ArrowLeftRight size={15} /> Transfer
             </button>
             <button
-              onClick={() => setShowReportsModal(true)}
+              onClick={onOpenReports}
               className="px-3.5 py-2.5 rounded-2xl bg-slate-200 dark:bg-white/10 hover:bg-slate-300 dark:hover:bg-white/15 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer border border-slate-300/80 dark:border-white/10"
             >
               <BarChart3 size={15} /> Reports
@@ -1751,87 +1733,7 @@ export default function CashBookScreen() {
         </div>
       )}
 
-      {/* ==================================================== */}
-      {/* MODAL: REPORTS PREVIEW & PERIOD SUMMARY (Phase 2) */}
-      {/* ==================================================== */}
-      {showReportsModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-md border border-slate-200 dark:border-white/10 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="p-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-xl">
-                  <BarChart3 size={18} />
-                </span>
-                <div>
-                  <h3 className="font-black text-lg text-slate-900 dark:text-white">
-                    Cash Book Summary
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Active Filters Period Summary
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowReportsModal(false)}
-                className="p-1 text-slate-400 hover:text-white rounded-lg cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 pt-2">
-              <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block mb-1">
-                  Total Income
-                </span>
-                <span className="text-lg font-black font-mono text-emerald-600 dark:text-emerald-400">
-                  ₹{reportsSummary.income.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-
-              <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20">
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 dark:text-rose-400 block mb-1">
-                  Total Expense
-                </span>
-                <span className="text-lg font-black font-mono text-rose-600 dark:text-rose-400">
-                  ₹{reportsSummary.expense.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-            </div>
-
-            <div className="p-3.5 rounded-2xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block mb-0.5">
-                  Net Cashflow
-                </span>
-                <span className={`text-base font-black font-mono ${
-                  reportsSummary.net >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'
-                }`}>
-                  {reportsSummary.net >= 0 ? '+' : ''}₹{reportsSummary.net.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div className="text-right text-[11px] text-slate-400">
-                <span>{reportsSummary.count} entries</span>
-              </div>
-            </div>
-
-            <div className="p-3 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-600 dark:text-cyan-400 text-xs">
-              <p className="font-semibold">Phase 4 Reports & Analytics</p>
-              <p className="text-[11px] text-cyan-600/80 dark:text-cyan-400/80 mt-0.5">
-                Full visual charts, monthly trends, vehicle cost breakdowns, and CSV export will be available in Phase 4.
-              </p>
-            </div>
-
-            <button
-              onClick={() => setShowReportsModal(false)}
-              className="w-full py-2.5 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-950 font-black text-xs cursor-pointer active:scale-95 transition-transform"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }
+
