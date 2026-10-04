@@ -1,3 +1,4 @@
+import { notificationService } from './services/notificationService';
 // src/App.jsx
 import React, { useState, useEffect } from 'react';
 import { 
@@ -43,6 +44,7 @@ function AppContent() {
     vehicles,
     activeVehicle,
     records,
+    reminders,
     bin,
     addCompletedFuelRecord,
     addPendingFuelRecord,
@@ -85,6 +87,26 @@ function AppContent() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [isInstallable, setIsInstallable] = useState(false);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
+
+
+  useEffect(() => {
+    const checkNotifs = () => {
+      notificationService.checkAndSendNotifications(reminders, activeVehicle?.current_odometer_km);
+    };
+
+    checkNotifs();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkNotifs();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [reminders, activeVehicle?.current_odometer_km]);
 
   const initialFilterConfig = {
     dateMode: 'all',

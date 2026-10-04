@@ -1,5 +1,7 @@
 // src/screens/DocumentsRemindersScreen.jsx
 import React, { useState } from 'react';
+import { notificationService } from '../services/notificationService';
+import { BellRing } from 'lucide-react';
 import { useAppData } from '../context/AppDataContext';
 import { 
   FileText, 
@@ -45,6 +47,17 @@ export default function DocumentsRemindersScreen({ onBack }) {
   const [remDueDate, setRemDueDate] = useState('');
   const [remDueKm, setRemDueKm] = useState('');
   const [remNotes, setRemNotes] = useState('');
+  const [notificationsEnabled, setNotificationsEnabled] = useState(notificationService.isNotificationsEnabled());
+  const toggleNotifications = async () => {
+    if (notificationsEnabled) {
+      notificationService.setNotificationsEnabled(false);
+      setNotificationsEnabled(false);
+    } else {
+      const perm = await notificationService.requestPermission();
+      setNotificationsEnabled(perm === 'granted');
+    }
+  };
+
 
   const handleUploadDoc = async (e) => {
     e.preventDefault();
@@ -225,7 +238,26 @@ export default function DocumentsRemindersScreen({ onBack }) {
             </div>
           )
         ) : (
-          /* 2. REMINDERS CONTENT */
+                    <>
+          {/* 2. REMINDERS CONTENT */}
+          <div className="mb-4 flex items-center justify-between glass-panel p-3 rounded-2xl border border-slate-200/80 dark:border-white/10">
+            <div className="flex items-center gap-2">
+              <BellRing size={18} className={notificationsEnabled ? 'text-cyan-500' : 'text-slate-400'} />
+              <div>
+                <p className="text-sm font-bold text-slate-800 dark:text-slate-200">System Notifications</p>
+                <p className="text-[10px] text-slate-500">Get alerts for due dates and milestones</p>
+              </div>
+            </div>
+                        <button 
+              onClick={toggleNotifications}
+              disabled={!notificationService.isSupported()}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${!notificationService.isSupported() ? 'bg-rose-500/10 text-rose-500 cursor-not-allowed' : notificationsEnabled ? 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-400' : 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-400'}`}
+            >
+              {!notificationService.isSupported() ? 'Unavailable' : notificationsEnabled ? 'Enabled' : 'Enable'}
+            </button>
+          </div>
+
+
           reminders.length === 0 ? (
             <div className="glass-panel rounded-3xl p-8 text-center text-slate-400 border border-slate-200/80 dark:border-white/10">
               <div className="w-12 h-12 bg-slate-200/80 dark:bg-white/5 rounded-2xl flex items-center justify-center mx-auto mb-2 text-slate-400">
@@ -295,6 +327,7 @@ export default function DocumentsRemindersScreen({ onBack }) {
               })}
             </div>
           )
+          </>
         )}
 
       </div>
@@ -464,3 +497,4 @@ export default function DocumentsRemindersScreen({ onBack }) {
     </div>
   );
 }
+
