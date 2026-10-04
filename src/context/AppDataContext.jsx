@@ -384,6 +384,18 @@ export const AppDataProvider = ({ children }) => {
     return imported;
   };
 
+  const refreshFuelRecords = useCallback(async () => {
+    if (!activeVehicle?.id) return [];
+    try {
+      const fuelRecs = await fuelService.getFuelRecords(activeVehicle.id);
+      setRecords(fuelRecs);
+      return fuelRecs;
+    } catch (err) {
+      console.error('[AppDataContext] Error refreshing fuel records:', err);
+      return [];
+    }
+  }, [activeVehicle?.id]);
+
   // Service Actions
   const updateServiceSettings = async (settings) => {
     if (!activeVehicle?.id || !user) return;
@@ -636,6 +648,7 @@ export const AppDataProvider = ({ children }) => {
     updateVehicle,
     deleteVehicle,
     loadVehicles,
+    loadVehicleData,
 
     // Fuel Records
     records,
@@ -649,6 +662,7 @@ export const AppDataProvider = ({ children }) => {
     restoreFromBin,
     permanentDelete,
     bulkImportFuelRecords,
+    refreshFuelRecords,
 
     // Service & Maintenance
     serviceSettings,

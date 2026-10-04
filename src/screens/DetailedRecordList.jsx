@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { FileSpreadsheet, File as FileIcon, Download, Upload, ArrowLeft, Filter, Eye, Edit3, TableProperties } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
@@ -6,11 +6,67 @@ import autoTable from 'jspdf-autotable';
 import FilterBar from '../components/FilterBar';
 import RecordDetails from '../components/RecordDetails';
 import { calculateStats, getDateRangeString, parseLocalDate } from '../utils/helpers';
+import { useAppData } from '../context/AppDataContext';
 
 const DetailedRecordList = ({ records, filterConfig, onFilterChange, onBack, onEdit, onImport, userProfile }) => {
+  const { refreshFuelRecords } = useAppData();
   const [viewingRecord, setViewingRecord] = useState(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const fileInputRef = useRef(null);
+  const containerRef = useRef(null);
+  const rootRef = useRef(null);
+
+  // Refresh fuel records from Supabase on entry to prevent stale records state
+  useEffect(() => {
+    if (refreshFuelRecords) {
+      refreshFuelRecords();
+    }
+  }, [refreshFuelRecords]);
+
+  // Ensure list starts at the top (scrollTop = 0) immediately on component mount
+  useEffect(() => {
+    const scrollToTop = () => {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      if (document.documentElement) document.documentElement.scrollTop = 0;
+      if (document.body) document.body.scrollTop = 0;
+      if (containerRef.current) {
+        containerRef.current.scrollTop = 0;
+        if (typeof containerRef.current.scrollTo === 'function') {
+          containerRef.current.scrollTo({ top: 0, behavior: 'auto' });
+        }
+      }
+      if (rootRef.current) {
+        rootRef.current.scrollTop = 0;
+        let el = rootRef.current.parentElement;
+        while (el) {
+          if (el.scrollTop > 0) {
+            el.scrollTop = 0;
+          }
+          el = el.parentElement;
+        }
+      }
+    };
+    scrollToTop();
+    const rafId = requestAnimationFrame(scrollToTop);
+    const timerId = setTimeout(scrollToTop, 50);
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(timerId);
+    };
+  }, []);
+
+  // Reset scroll position to top whenever records or filters change
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+    if (containerRef.current) {
+      containerRef.current.scrollTop = 0;
+      if (typeof containerRef.current.scrollTo === 'function') {
+        containerRef.current.scrollTo({ top: 0, behavior: 'auto' });
+      }
+    }
+  }, [records, filterConfig?.dateMode, filterConfig?.sortBy]);
 
   const availableYears = useMemo(() => {
     const years = new Set(records.map(r => parseLocalDate(r.date).getFullYear()));
@@ -65,7 +121,13 @@ const DetailedRecordList = ({ records, filterConfig, onFilterChange, onBack, onE
       if (sortBy === 'amount') return parseFloat(b.amount) - parseFloat(a.amount);
       if (sortBy === 'cost') return parseFloat(b.ratePerKm) - parseFloat(a.ratePerKm);
       if (sortBy === 'mileage') return parseFloat(b.mileage) - parseFloat(a.mileage);
-      return new Date(b.date) - new Date(a.date);
+      const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+      if (dateDiff !== 0) return dateDiff;
+      const timeDiff = new Date(b.refill_at || b.date).getTime() - new Date(a.refill_at || a.date).getTime();
+      if (timeDiff !== 0) return timeDiff;
+      const odoDiff = (parseFloat(b.current_reserve_odometer ?? b.newReading) || 0) - (parseFloat(a.current_reserve_odometer ?? a.newReading) || 0);
+      if (odoDiff !== 0) return odoDiff;
+      return (b.id && a.id) ? String(b.id).localeCompare(String(a.id)) : 0;
     });
   }, [records, filterConfig]);
 
@@ -146,7 +208,7 @@ const DetailedRecordList = ({ records, filterConfig, onFilterChange, onBack, onE
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#090d16] text-slate-100 animate-in slide-in-from-right duration-300 relative overflow-hidden">
+    <div ref={rootRef} className="flex flex-col h-full bg-[#090d16] text-slate-100 animate-in slide-in-from-right duration-300 relative overflow-hidden">
       {viewingRecord && (
         <RecordDetails
           record={viewingRecord}
@@ -265,7 +327,7 @@ const DetailedRecordList = ({ records, filterConfig, onFilterChange, onBack, onE
         </div>
 
         {/* Container for Responsive Views */}
-        <div className="flex-1 overflow-auto glass-panel rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-xl">
+        <div ref={containerRef} className="flex-1 overflow-auto glass-panel rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-xl">
           {filteredRecords.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-slate-400">
               <Filter size={36} className="mb-2 opacity-40 text-slate-400" />

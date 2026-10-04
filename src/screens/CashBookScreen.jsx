@@ -5,20 +5,18 @@ import {
   BookOpen, 
   ArrowUpRight, 
   ArrowDownLeft, 
-  ArrowLeftRight,
+  ArrowLeftRight, 
   Plus, 
   Trash2, 
-  Edit2,
-  Calendar, 
+  Edit2, 
   CreditCard, 
-  TrendingUp, 
-  TrendingDown, 
-  Wallet,
-  Building2,
-  Search,
-  X,
-  Landmark,
-  Smartphone
+  Wallet, 
+  Building2, 
+  Search, 
+  X, 
+  Landmark, 
+  Smartphone,
+  BarChart3
 } from 'lucide-react';
 
 const EXPENSE_CATEGORIES = [
@@ -51,15 +49,14 @@ const INCOME_CATEGORIES = [
 export default function CashBookScreen() {
   const { 
     financialAccounts, 
-    cashBookCategories,
+    cashBookCategories, 
     cashBookEntries, 
-    cashBookSummary,
-    vehicles,
-    addAccount,
-    updateAccount,
-    deleteAccount,
-    addCashBookEntry,
-    createTransfer,
+    vehicles, 
+    addAccount, 
+    updateAccount, 
+    deleteAccount, 
+    addCashBookEntry, 
+    createTransfer, 
     updateCashBookEntry, 
     deleteCashBookEntry 
   } = useAppData();
@@ -68,7 +65,8 @@ export default function CashBookScreen() {
   const [filterType, setFilterType] = useState('all'); // 'all' | 'income' | 'expense' | 'transfer'
   const [selectedAccountId, setSelectedAccountId] = useState('all'); // 'all' | accountId
   const [selectedVehicleId, setSelectedVehicleId] = useState('all'); // 'all' | 'none' | vehicleId
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [categoryTypeFilter, setCategoryTypeFilter] = useState('all'); // 'all' | 'income' | 'expense'
+  const [selectedCategory, setSelectedCategory] = useState('all'); // 'all' | category_id
   const [searchQuery, setSearchQuery] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -76,6 +74,7 @@ export default function CashBookScreen() {
   // Modals
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
+  const [showReportsModal, setShowReportsModal] = useState(false);
   const [editingEntry, setEditingEntry] = useState(null);
   const [editingAccount, setEditingAccount] = useState(null);
 
@@ -175,19 +174,97 @@ export default function CashBookScreen() {
     return map;
   }, [financialAccounts]);
 
-  // Unique categories in existing entries and active master categories
-  const availableCategories = useMemo(() => {
-    const cats = new Set();
-    (cashBookCategories || []).forEach(c => cats.add(c.name));
+  // Master categories divided by type (Phase 3)
+  const expenseMasterCategories = useMemo(() => {
+    return (cashBookCategories || [])
+      .filter(c => c.category_type === 'expense' && c.is_active !== false)
+      .sort((a, b) => (a.sort_order ?? 99) - (b.sort_order ?? 99) || a.name.localeCompare(b.name));
+  }, [cashBookCategories]);
+
+  const incomeMasterCategories = useMemo(() => {
+    return (cashBookCategories || [])
+      .filter(c => c.category_type === 'income' && c.is_active !== false)
+      .sort((a, b) => (a.sort_order ?? 99) - (b.sort_order ?? 99) || a.name.localeCompare(b.name));
+  }, [cashBookCategories]);
+
+  // Fallback defaults if master records haven't loaded or are not populated yet
+  const effectiveExpenseCategories = useMemo(() => {
+    if (expenseMasterCategories.length > 0) return expenseMasterCategories;
+    return EXPENSE_CATEGORIES.map((name, i) => ({
+      id: `default-exp-${name}`,
+      name,
+      category_type: 'expense',
+      sort_order: i
+    }));
+  }, [expenseMasterCategories]);
+
+  const effectiveIncomeCategories = useMemo(() => {
+    if (incomeMasterCategories.length > 0) return incomeMasterCategories;
+    return INCOME_CATEGORIES.map((name, i) => ({
+      id: `default-inc-${name}`,
+      name,
+      category_type: 'income',
+      sort_order: i
+    }));
+  }, [incomeMasterCategories]);
+
+  // Legacy categories present in entries without master matching
+  const legacyCategories = useMemo(() => {
+    const masterNames = new Set((cashBookCategories || []).map(c => c.name.toLowerCase()));
+    const items = [];
+    const seen = new Set();
     (cashBookEntries || []).forEach(e => {
-      if (e.category) cats.add(e.category);
+      if (e.category && !e.category_id && !masterNames.has(e.category.toLowerCase())) {
+        const key = `${e.entry_type || 'expense'}:${e.category.toLowerCase()}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          items.push({
+            name: e.category,
+            type: e.entry_type || 'expense'
+          });
+        }
+      }
     });
-    if (cats.size === 0) {
-      EXPENSE_CATEGORIES.forEach(c => cats.add(c));
-      INCOME_CATEGORIES.forEach(c => cats.add(c));
-    }
-    return Array.from(cats).sort();
+    return items.sort((a, b) => a.name.localeCompare(b.name));
   }, [cashBookCategories, cashBookEntries]);
+
+  // Handle category type switcher with intelligent category preservation/mapping (Phase 3)
+  const handleCategoryTypeChange = (newType) => {
+    setCategoryTypeFilter(newType);
+    if (selectedCategory === 'all') return;
+
+    if (selectedCategory.startsWith('legacy:')) {
+      const parts = selectedCategory.split(':');
+      const legacyType = parts[1];
+      if (newType !== 'all' && legacyType !== newType) {
+        setSelectedCategory('all');
+      }
+      return;
+    }
+
+    const currentCat = (cashBookCategories || []).find(c => c.id === selectedCategory) ||
+      effectiveExpenseCategories.find(c => c.id === selectedCategory) ||
+      effectiveIncomeCategories.find(c => c.id === selectedCategory);
+
+    if (currentCat) {
+      if (newType === 'all') {
+        // Keep selected category as is
+      } else if (currentCat.category_type === newType) {
+        // Already matching new type
+      } else {
+        // Attempt to match counterpart category with identical name in the new type
+        const targetList = newType === 'income' ? effectiveIncomeCategories : effectiveExpenseCategories;
+        const counterpart = targetList.find(c => c.name.toLowerCase() === currentCat.name.toLowerCase());
+        if (counterpart) {
+          setSelectedCategory(counterpart.id);
+        } else {
+          setSelectedCategory('all');
+        }
+      }
+    } else {
+      setSelectedCategory('all');
+    }
+  };
 
   // Calculate Ledger Rows with Running Balances (Requirement 5)
   const ledgerRows = useMemo(() => {
@@ -259,9 +336,43 @@ export default function CashBookScreen() {
         if (selectedVehicleId !== 'none' && entry.vehicle_id !== selectedVehicleId) return false;
       }
 
-      // Category filter
-      if (selectedCategory !== 'all' && entry.category !== selectedCategory) {
+      // Category Type filter (Phase 3)
+      if (categoryTypeFilter !== 'all' && entry.entry_type !== categoryTypeFilter) {
         return false;
+      }
+
+      // Category filter (Phase 3: category_id + entry_type & legacy fallback)
+      if (selectedCategory !== 'all') {
+        if (selectedCategory.startsWith('legacy:')) {
+          const parts = selectedCategory.split(':');
+          const legType = parts[1];
+          const legName = parts[2];
+          if (entry.entry_type !== legType) return false;
+          if ((entry.category || '').toLowerCase() !== legName.toLowerCase()) return false;
+        } else {
+          const targetCat = (cashBookCategories || []).find(c => c.id === selectedCategory) ||
+            effectiveExpenseCategories.find(c => c.id === selectedCategory) ||
+            effectiveIncomeCategories.find(c => c.id === selectedCategory);
+
+          if (targetCat) {
+            // Must match entry_type
+            if (entry.entry_type !== targetCat.category_type) {
+              return false;
+            }
+            // Match category_id, or if null, match category string (legacy compatibility)
+            const idMatches = entry.category_id && entry.category_id === targetCat.id;
+            const nameMatches = (!entry.category_id || entry.category_id === targetCat.id) &&
+              (entry.category || '').toLowerCase() === targetCat.name.toLowerCase();
+
+            if (!idMatches && !nameMatches) {
+              return false;
+            }
+          } else {
+            if ((entry.category || '').toLowerCase() !== selectedCategory.toLowerCase()) {
+              return false;
+            }
+          }
+        }
       }
 
       // Date range filter
@@ -287,7 +398,40 @@ export default function CashBookScreen() {
 
     // 4. Reverse to show newest first in the UI
     return filtered.reverse();
-  }, [cashBookEntries, selectedAccountId, filterType, selectedVehicleId, selectedCategory, startDate, endDate, searchQuery, accountsMap, totalOpeningBalance, vehiclesMap]);
+  }, [
+    cashBookEntries, 
+    selectedAccountId, 
+    filterType, 
+    selectedVehicleId, 
+    categoryTypeFilter, 
+    selectedCategory, 
+    startDate, 
+    endDate, 
+    searchQuery, 
+    accountsMap, 
+    totalOpeningBalance, 
+    vehiclesMap,
+    cashBookCategories,
+    effectiveExpenseCategories,
+    effectiveIncomeCategories
+  ]);
+
+  // Summary for Reports Modal (Phase 2 preview)
+  const reportsSummary = useMemo(() => {
+    let income = 0;
+    let expense = 0;
+    (ledgerRows || []).forEach(e => {
+      const amt = parseFloat(e.amount) || 0;
+      if (e.entry_type === 'income') income += amt;
+      else if (e.entry_type === 'expense') expense += amt;
+    });
+    return {
+      income,
+      expense,
+      net: income - expense,
+      count: ledgerRows.length,
+    };
+  }, [ledgerRows]);
 
   // Open modal for recording a new transaction
   const openNewTransactionModal = (type = 'expense') => {
@@ -481,22 +625,23 @@ export default function CashBookScreen() {
               Cash Book
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Multi-Account Cashflow, Ledger & Inter-Account Transfers
+              Multi-Account Cashflow, Transaction Ledger & Transfers
             </p>
           </div>
 
+          {/* Phase 2 Header Actions: [ + Expense ] [ + Income ] [ Transfer ] [ Reports ] */}
           <div className="flex items-center flex-wrap gap-2">
             <button
               onClick={() => openNewTransactionModal('expense')}
               className="px-3.5 py-2.5 rounded-2xl bg-rose-500 hover:bg-rose-400 text-white font-bold text-xs shadow-md shadow-rose-500/20 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
             >
-              <ArrowUpRight size={15} /> Expense
+              <ArrowUpRight size={15} /> + Expense
             </button>
             <button
               onClick={() => openNewTransactionModal('income')}
               className="px-3.5 py-2.5 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-md shadow-emerald-500/20 active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer"
             >
-              <ArrowDownLeft size={15} /> Income
+              <ArrowDownLeft size={15} /> + Income
             </button>
             <button
               onClick={() => openNewTransactionModal('transfer')}
@@ -505,168 +650,168 @@ export default function CashBookScreen() {
               <ArrowLeftRight size={15} /> Transfer
             </button>
             <button
-              onClick={openNewAccountModal}
+              onClick={() => setShowReportsModal(true)}
               className="px-3.5 py-2.5 rounded-2xl bg-slate-200 dark:bg-white/10 hover:bg-slate-300 dark:hover:bg-white/15 text-slate-800 dark:text-slate-200 font-bold text-xs active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer border border-slate-300/80 dark:border-white/10"
             >
-              <Building2 size={15} /> Accounts
+              <BarChart3 size={15} /> Reports
             </button>
           </div>
         </div>
 
-        {/* 1. FINANCIAL KPI SUMMARY CARDS */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
-          {/* Card 1: Total / Filtered Account Balance */}
-          <div className="glass-panel-glow p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-lg relative overflow-hidden">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs uppercase font-extrabold tracking-wider text-slate-500 dark:text-slate-400">
-                {selectedAccountId === 'all' 
-                  ? 'Total Liquid Balance' 
-                  : `${accountsMap[selectedAccountId]?.name || 'Account'} Balance`}
-              </span>
-              <span className="p-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-xl border border-emerald-500/20">
-                <Wallet size={16} />
-              </span>
-            </div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-sm font-bold text-slate-500">₹</span>
-              <p className={`text-2xl md:text-3xl font-black font-mono ${
-                (selectedAccountId === 'all' ? totalAccountsBalance : (accountBalances[selectedAccountId]?.currentBalance || 0)) >= 0 
-                  ? 'text-emerald-600 dark:text-emerald-400' 
-                  : 'text-rose-500'
-              }`}>
-                {(selectedAccountId === 'all' 
-                  ? totalAccountsBalance 
-                  : (accountBalances[selectedAccountId]?.currentBalance || 0)
-                ).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-            </div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-2">
-              <span>Opening: ₹{(selectedAccountId === 'all' ? totalOpeningBalance : (accountBalances[selectedAccountId]?.opening || 0)).toLocaleString('en-IN')}</span>
-              <span>•</span>
-              <span>{financialAccounts.length} accounts configured</span>
-            </p>
-          </div>
-
-          {/* Card 2: Total Income */}
-          <div className="glass-card p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-lg relative overflow-hidden">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs uppercase font-extrabold tracking-wider text-slate-500 dark:text-slate-400">Total Income</span>
-              <span className="p-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-xl border border-emerald-500/20">
-                <TrendingUp size={16} />
-              </span>
-            </div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">₹</span>
-              <p className="text-2xl md:text-3xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
-                {cashBookSummary.totalIncome.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-            </div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-              Earnings & inflows (excludes transfers)
-            </p>
-          </div>
-
-          {/* Card 3: Total Expense */}
-          <div className="glass-card p-5 rounded-3xl border border-slate-200/80 dark:border-white/10 shadow-lg relative overflow-hidden">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs uppercase font-extrabold tracking-wider text-slate-500 dark:text-slate-400">Total Expense</span>
-              <span className="p-2 bg-rose-500/10 text-rose-600 dark:text-rose-400 rounded-xl border border-rose-500/20">
-                <TrendingDown size={16} />
-              </span>
-            </div>
-            <div className="flex items-baseline gap-1">
-              <span className="text-sm font-bold text-rose-600 dark:text-rose-400">₹</span>
-              <p className="text-2xl md:text-3xl font-black text-rose-600 dark:text-rose-400 font-mono">
-                {cashBookSummary.totalExpense.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-            </div>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-              Debits & spending (excludes transfers)
-            </p>
-          </div>
-        </div>
-
-        {/* 2. ACCOUNT SELECTOR & MANAGEMENT BAR */}
-        <div className="space-y-2">
+        {/* ==================================================== */}
+        {/* PHASE 1: FINANCIAL ACCOUNTS SECTION */}
+        {/* ==================================================== */}
+        <div className="space-y-3">
           <div className="flex items-center justify-between px-1">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-              <CreditCard size={13} /> Financial Accounts
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg">
+                <Building2 size={15} />
+              </span>
+              <div>
+                <h2 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Financial Accounts
+                </h2>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                  Select an account to filter the transaction ledger below
+                </p>
+              </div>
+            </div>
             <button
               onClick={openNewAccountModal}
-              className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1 cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-bold text-xs flex items-center gap-1.5 border border-emerald-500/20 transition-all cursor-pointer active:scale-95"
             >
               <Plus size={13} /> Add Account
             </button>
           </div>
 
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-            {/* All Accounts Tab */}
-            <button
+          {/* Accounts: Responsive Grid on Desktop, Horizontal Scroll on Mobile */}
+          <div className="flex md:grid md:grid-cols-3 lg:grid-cols-4 gap-3 overflow-x-auto md:overflow-x-visible pb-2 md:pb-0 scrollbar-none snap-x">
+            {/* "All Accounts" Aggregate Card */}
+            <div
               onClick={() => setSelectedAccountId('all')}
-              className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all shrink-0 flex items-center gap-2 border cursor-pointer ${
+              className={`min-w-[240px] md:min-w-0 p-4 rounded-2xl border transition-all cursor-pointer relative snap-start shrink-0 md:shrink select-none ${
                 selectedAccountId === 'all'
-                  ? 'bg-slate-900 text-white dark:bg-emerald-500 dark:text-slate-950 border-transparent shadow-md'
-                  : 'bg-white/80 dark:bg-slate-900/80 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-white/10 hover:border-slate-400'
+                  ? 'bg-slate-900 text-white dark:bg-emerald-950/40 border-slate-700 dark:border-emerald-500 shadow-md ring-2 ring-emerald-500/50'
+                  : 'glass-card text-slate-800 dark:text-slate-200 border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20'
               }`}
             >
-              <Wallet size={15} />
-              <span>All Accounts</span>
-              <span className="font-mono px-2 py-0.5 rounded-full text-[10px] bg-black/10 dark:bg-white/10">
-                ₹{totalAccountsBalance.toLocaleString('en-IN')}
-              </span>
-            </button>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className={`p-2 rounded-xl ${
+                    selectedAccountId === 'all'
+                      ? 'bg-emerald-500/20 text-emerald-400'
+                      : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400'
+                  }`}>
+                    <Wallet size={16} />
+                  </span>
+                  <div>
+                    <div className="text-xs font-black uppercase tracking-wider">All Accounts</div>
+                    <div className="text-[10px] text-slate-400 dark:text-slate-500">Aggregate Liquid</div>
+                  </div>
+                </div>
+                {selectedAccountId === 'all' && (
+                  <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500 text-slate-950">
+                    Active
+                  </span>
+                )}
+              </div>
 
-            {/* Individual Accounts */}
-            {financialAccounts.map(acc => {
+              <div className="mt-3">
+                <div className="text-[11px] text-slate-400 font-medium">Combined Balance</div>
+                <div className={`text-xl font-black font-mono tracking-tight ${
+                  totalAccountsBalance >= 0
+                    ? selectedAccountId === 'all' ? 'text-emerald-400' : 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-rose-500'
+                }`}>
+                  ₹{totalAccountsBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+
+              <div className="mt-2 pt-2 border-t border-slate-200/50 dark:border-white/5 flex items-center justify-between text-[10px] text-slate-400">
+                <span>{financialAccounts.length} accounts configured</span>
+                <span className="font-mono">Open: ₹{totalOpeningBalance.toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+
+            {/* Individual Accounts Cards */}
+            {financialAccounts.map((acc) => {
               const bal = accountBalances[acc.id]?.currentBalance || 0;
               const isSelected = selectedAccountId === acc.id;
+
               return (
                 <div
                   key={acc.id}
-                  className={`group relative px-4 py-2.5 rounded-2xl text-xs font-bold transition-all shrink-0 flex items-center gap-2 border cursor-pointer ${
-                    isSelected
-                      ? 'bg-emerald-600 text-white dark:bg-emerald-500 dark:text-slate-950 border-transparent shadow-md'
-                      : 'bg-white/80 dark:bg-slate-900/80 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-white/10 hover:border-emerald-500/40'
-                  }`}
                   onClick={() => setSelectedAccountId(acc.id)}
+                  className={`min-w-[240px] md:min-w-0 p-4 rounded-2xl border transition-all cursor-pointer relative snap-start shrink-0 md:shrink group select-none ${
+                    isSelected
+                      ? 'bg-emerald-950/20 dark:bg-emerald-950/40 border-emerald-500 shadow-md ring-2 ring-emerald-500 text-slate-900 dark:text-white'
+                      : 'glass-card text-slate-800 dark:text-slate-200 border-slate-200 dark:border-white/10 hover:border-emerald-500/40'
+                  }`}
                 >
-                  <span className={isSelected ? 'text-white dark:text-slate-950' : 'text-emerald-500'}>
-                    {getAccountIcon(acc.account_type)}
-                  </span>
-                  <span>{acc.name}</span>
-                  {acc.is_default && (
-                    <span className="text-[9px] uppercase px-1 py-0.2 rounded bg-cyan-500/20 text-cyan-600 dark:text-cyan-300">
-                      Def
-                    </span>
-                  )}
-                  <span className={`font-mono px-2 py-0.5 rounded-full text-[10px] ${
-                    isSelected 
-                      ? 'bg-black/15 dark:bg-white/15' 
-                      : bal >= 0 
-                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' 
-                        : 'bg-rose-500/10 text-rose-500'
-                  }`}>
-                    ₹{bal.toLocaleString('en-IN')}
-                  </span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openEditAccountModal(acc);
-                    }}
-                    title="Edit account"
-                    className="p-1 text-slate-400 hover:text-white rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <Edit2 size={12} />
-                  </button>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`p-2 rounded-xl shrink-0 ${
+                        isSelected
+                          ? 'bg-emerald-500/20 text-emerald-500 dark:text-emerald-400'
+                          : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-400 group-hover:text-emerald-500'
+                      }`}>
+                        {getAccountIcon(acc.account_type)}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="text-xs font-black truncate">{acc.name}</div>
+                        <div className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500">
+                          {acc.account_type}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      {acc.is_default && (
+                        <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30">
+                          Def
+                        </span>
+                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEditAccountModal(acc);
+                        }}
+                        title="Edit Account"
+                        className="p-1 text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <Edit2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-3">
+                    <div className="text-[11px] text-slate-400 font-medium">Current Balance</div>
+                    <div className={`text-xl font-black font-mono tracking-tight ${
+                      bal >= 0
+                        ? isSelected ? 'text-emerald-600 dark:text-emerald-400' : 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-rose-500'
+                    }`}>
+                      ₹{bal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                  </div>
+
+                  <div className="mt-2 pt-2 border-t border-slate-200/50 dark:border-white/5 flex items-center justify-between text-[10px] text-slate-400">
+                    <span>Open: ₹{(parseFloat(acc.opening_balance) || 0).toLocaleString('en-IN')}</span>
+                    {isSelected && (
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400">Filtered</span>
+                    )}
+                  </div>
                 </div>
               );
             })}
           </div>
         </div>
 
-        {/* 3. SEARCH & ADVANCED FILTER TOOLBAR */}
+        {/* ==================================================== */}
+        {/* PHASE 2 & 3: SEARCH & ADVANCED FILTER TOOLBAR */}
+        {/* ==================================================== */}
         <div className="glass-panel p-4 rounded-3xl border border-slate-200/80 dark:border-white/10 space-y-3">
+          {/* Row 1: Search + Entry Type Switcher */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             {/* Search Input */}
             <div className="relative flex-1">
@@ -733,20 +878,121 @@ export default function CashBookScreen() {
             </div>
           </div>
 
-          {/* Secondary Filter Row: Category, Vehicle, Date Range */}
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 pt-1 text-xs">
-            {/* Category Filter */}
-            <div>
-              <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Category</label>
+          {/* Row 2: Category Type [All][Income][Expense] + Category Dropdown + Vehicle + Date Range */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1 text-xs">
+            {/* Category Type Filter & Category Dropdown (Phase 3) */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <label className="block text-[10px] uppercase font-bold text-slate-500">Category Filter</label>
+                {/* Category Type Pills */}
+                <div className="inline-flex rounded-lg bg-slate-200/70 dark:bg-slate-800/70 p-0.5 text-[10px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => handleCategoryTypeChange('all')}
+                    className={`px-2 py-0.5 rounded-md transition-all ${
+                      categoryTypeFilter === 'all'
+                        ? 'bg-white dark:bg-emerald-500 text-slate-950 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
+                    }`}
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCategoryTypeChange('income')}
+                    className={`px-2 py-0.5 rounded-md transition-all ${
+                      categoryTypeFilter === 'income'
+                        ? 'bg-emerald-500 text-slate-950 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
+                    }`}
+                  >
+                    Income
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCategoryTypeChange('expense')}
+                    className={`px-2 py-0.5 rounded-md transition-all ${
+                      categoryTypeFilter === 'expense'
+                        ? 'bg-rose-500 text-white shadow-xs'
+                        : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
+                    }`}
+                  >
+                    Expense
+                  </button>
+                </div>
+              </div>
+
+              {/* Category Dropdown */}
               <select
                 value={selectedCategory}
                 onChange={(e) => setSelectedCategory(e.target.value)}
                 className="w-full px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-white/10 font-medium"
               >
-                <option value="all">All Categories</option>
-                {availableCategories.map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
+                <option value="all">
+                  {categoryTypeFilter === 'all' 
+                    ? 'All Categories' 
+                    : categoryTypeFilter === 'income' 
+                      ? 'All Income Categories' 
+                      : 'All Expense Categories'}
+                </option>
+
+                {categoryTypeFilter === 'all' && (
+                  <>
+                    <optgroup label="Expense Categories">
+                      {effectiveExpenseCategories.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} (Expense)
+                        </option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="Income Categories">
+                      {effectiveIncomeCategories.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} (Income)
+                        </option>
+                      ))}
+                    </optgroup>
+                    {legacyCategories.length > 0 && (
+                      <optgroup label="Legacy Categories">
+                        {legacyCategories.map(c => (
+                          <option key={`legacy-${c.type}-${c.name}`} value={`legacy:${c.type}:${c.name}`}>
+                            {c.name} ({c.type === 'income' ? 'Income' : 'Expense'})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </>
+                )}
+
+                {categoryTypeFilter === 'income' && (
+                  <>
+                    {effectiveIncomeCategories.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                    {legacyCategories.filter(c => c.type === 'income').map(c => (
+                      <option key={`legacy-inc-${c.name}`} value={`legacy:income:${c.name}`}>
+                        {c.name} (Legacy)
+                      </option>
+                    ))}
+                  </>
+                )}
+
+                {categoryTypeFilter === 'expense' && (
+                  <>
+                    {effectiveExpenseCategories.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                    {legacyCategories.filter(c => c.type === 'expense').map(c => (
+                      <option key={`legacy-exp-${c.name}`} value={`legacy:expense:${c.name}`}>
+                        {c.name} (Legacy)
+                      </option>
+                    ))}
+                  </>
+                )}
               </select>
             </div>
 
@@ -789,12 +1035,13 @@ export default function CashBookScreen() {
                   onChange={(e) => setEndDate(e.target.value)}
                   className="w-full px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-white/10 font-medium"
                 />
-                {(startDate || endDate || selectedCategory !== 'all' || selectedVehicleId !== 'all') && (
+                {(startDate || endDate || selectedCategory !== 'all' || categoryTypeFilter !== 'all' || selectedVehicleId !== 'all') && (
                   <button
                     onClick={() => {
                       setStartDate('');
                       setEndDate('');
                       setSelectedCategory('all');
+                      setCategoryTypeFilter('all');
                       setSelectedVehicleId('all');
                     }}
                     title="Reset filters"
@@ -808,8 +1055,9 @@ export default function CashBookScreen() {
           </div>
         </div>
 
-        {/* 4. LEDGER DISPLAY TABLE / CARDS (Requirement 5) */}
-        {/* Date | Description | Category | Account | Vehicle | Income | Expense | Balance */}
+        {/* ==================================================== */}
+        {/* PHASE 2: TRANSACTION LEDGER DISPLAY */}
+        {/* ==================================================== */}
         <div className="space-y-3">
           <div className="flex items-center justify-between px-1">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -818,6 +1066,12 @@ export default function CashBookScreen() {
             {selectedAccountId !== 'all' && (
               <span className="text-xs text-slate-400">
                 Filtered by <span className="font-bold text-emerald-500">{accountsMap[selectedAccountId]?.name}</span>
+                <button
+                  onClick={() => setSelectedAccountId('all')}
+                  className="ml-1 text-[11px] text-slate-400 hover:text-white underline cursor-pointer"
+                >
+                  (show all)
+                </button>
               </span>
             )}
           </div>
@@ -833,150 +1087,259 @@ export default function CashBookScreen() {
               </p>
             </div>
           ) : (
-            <div className="glass-panel rounded-3xl border border-slate-200/80 dark:border-white/10 overflow-hidden shadow-lg">
-              {/* Desktop / Tablet Structured Ledger Table */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-slate-200/60 dark:bg-white/5 text-[10px] uppercase font-extrabold text-slate-500 dark:text-slate-400 border-b border-slate-200/80 dark:border-white/10 tracking-wider">
-                      <th className="py-3 px-4">Date</th>
-                      <th className="py-3 px-4">Description</th>
-                      <th className="py-3 px-3">Category</th>
-                      <th className="py-3 px-3">Account</th>
-                      <th className="py-3 px-3">Vehicle</th>
-                      <th className="py-3 px-4 text-right">Income (₹)</th>
-                      <th className="py-3 px-4 text-right">Expense (₹)</th>
-                      <th className="py-3 px-4 text-right font-mono">Balance (₹)</th>
-                      <th className="py-3 px-3 text-center">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200/60 dark:divide-white/5">
-                    {ledgerRows.map((entry) => {
-                      const isIncome = entry.entry_type === 'income';
-                      const isExpense = entry.entry_type === 'expense';
-                      const isTransfer = entry.entry_type === 'transfer';
-                      const isTransferIn = isTransfer && entry.transfer_direction === 'in';
-                      const isTransferOut = isTransfer && entry.transfer_direction === 'out';
-                      const numAmount = parseFloat(entry.amount) || 0;
+            <>
+              {/* DESKTOP / TABLET STRUCTURED TABLE (hidden on mobile) */}
+              <div className="hidden md:block glass-panel rounded-3xl border border-slate-200/80 dark:border-white/10 overflow-hidden shadow-lg">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-200/60 dark:bg-white/5 text-[10px] uppercase font-extrabold text-slate-500 dark:text-slate-400 border-b border-slate-200/80 dark:border-white/10 tracking-wider">
+                        <th className="py-3 px-4">Date</th>
+                        <th className="py-3 px-4">Description</th>
+                        <th className="py-3 px-3">Category</th>
+                        <th className="py-3 px-3">Account</th>
+                        <th className="py-3 px-3">Vehicle</th>
+                        <th className="py-3 px-4 text-right">Income (₹)</th>
+                        <th className="py-3 px-4 text-right">Expense (₹)</th>
+                        <th className="py-3 px-4 text-right font-mono">Balance (₹)</th>
+                        <th className="py-3 px-3 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200/60 dark:divide-white/5">
+                      {ledgerRows.map((entry) => {
+                        const isIncome = entry.entry_type === 'income';
+                        const isExpense = entry.entry_type === 'expense';
+                        const isTransfer = entry.entry_type === 'transfer';
+                        const isTransferIn = isTransfer && entry.transfer_direction === 'in';
+                        const isTransferOut = isTransfer && entry.transfer_direction === 'out';
+                        const numAmount = parseFloat(entry.amount) || 0;
+                        const account = accountsMap[entry.account_id];
+                        const vehicle = vehiclesMap[entry.vehicle_id];
 
-                      const account = accountsMap[entry.account_id];
-                      const vehicle = vehiclesMap[entry.vehicle_id];
+                        return (
+                          <tr 
+                            key={entry.id}
+                            className="hover:bg-slate-50/80 dark:hover:bg-white/5 transition-colors group"
+                          >
+                            {/* Date */}
+                            <td className="py-3.5 px-4 font-mono text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                              {entry.entry_date}
+                            </td>
 
-                      return (
-                        <tr 
-                          key={entry.id}
-                          className="hover:bg-slate-50/80 dark:hover:bg-white/5 transition-colors group"
-                        >
-                          {/* Date */}
-                          <td className="py-3.5 px-4 font-mono text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                            {entry.entry_date}
-                          </td>
-
-                          {/* Description */}
-                          <td className="py-3.5 px-4 max-w-xs">
-                            <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white">
-                              {isTransfer && (
-                                <ArrowLeftRight size={13} className="text-cyan-500 shrink-0" />
+                            {/* Description */}
+                            <td className="py-3.5 px-4 max-w-xs">
+                              <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white">
+                                {isTransfer && (
+                                  <ArrowLeftRight size={13} className="text-cyan-500 shrink-0" />
+                                )}
+                                <span className="truncate">{entry.description || entry.category}</span>
+                              </div>
+                              {(entry.reference || entry.notes) && (
+                                <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                                  {entry.reference && <span className="font-mono mr-1">Ref: {entry.reference}</span>}
+                                  {entry.notes}
+                                </p>
                               )}
-                              <span className="truncate">{entry.description || entry.category}</span>
-                            </div>
-                            {(entry.reference || entry.notes) && (
-                              <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                                {entry.reference && <span className="font-mono mr-1">Ref: {entry.reference}</span>}
-                                {entry.notes}
-                              </p>
-                            )}
-                          </td>
+                            </td>
 
-                          {/* Category */}
-                          <td className="py-3.5 px-3 whitespace-nowrap">
-                            <span className={`inline-block text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
-                              isTransfer 
-                                ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400' 
-                                : isIncome
-                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                                  : 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300'
-                            }`}>
-                              {entry.category}
-                            </span>
-                          </td>
-
-                          {/* Account */}
-                          <td className="py-3.5 px-3 whitespace-nowrap">
-                            <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300 font-semibold">
-                              <span className="text-slate-400">{getAccountIcon(account?.account_type)}</span>
-                              <span>{account?.name || 'Cash'}</span>
-                            </div>
-                          </td>
-
-                          {/* Vehicle */}
-                          <td className="py-3.5 px-3 whitespace-nowrap text-slate-500 dark:text-slate-400">
-                            {vehicle ? (
-                              <span className="text-[11px] font-medium bg-slate-100 dark:bg-white/5 px-2 py-0.5 rounded-md">
-                                {vehicle.name}
+                            {/* Category */}
+                            <td className="py-3.5 px-3 whitespace-nowrap">
+                              <span className={`inline-block text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
+                                isTransfer 
+                                  ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400' 
+                                  : isIncome
+                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                    : 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300'
+                              }`}>
+                                {entry.category || 'General'}
                               </span>
-                            ) : (
-                              <span className="text-slate-300 dark:text-slate-600">—</span>
-                            )}
-                          </td>
+                            </td>
 
-                          {/* Income Column */}
-                          <td className="py-3.5 px-4 text-right font-mono whitespace-nowrap">
-                            {isIncome || isTransferIn ? (
-                              <span className="font-black text-emerald-600 dark:text-emerald-400">
-                                +₹{numAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </span>
-                            ) : (
-                              <span className="text-slate-300 dark:text-slate-600">—</span>
-                            )}
-                          </td>
+                            {/* Account */}
+                            <td className="py-3.5 px-3 whitespace-nowrap">
+                              <div className="flex items-center gap-1 text-slate-700 dark:text-slate-300 font-semibold">
+                                <span className="text-slate-400">{getAccountIcon(account?.account_type)}</span>
+                                <span>{account?.name || 'Cash'}</span>
+                              </div>
+                            </td>
 
-                          {/* Expense Column */}
-                          <td className="py-3.5 px-4 text-right font-mono whitespace-nowrap">
-                            {isExpense || isTransferOut ? (
-                              <span className="font-black text-rose-600 dark:text-rose-400">
-                                -₹{numAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </span>
-                            ) : (
-                              <span className="text-slate-300 dark:text-slate-600">—</span>
-                            )}
-                          </td>
+                            {/* Vehicle */}
+                            <td className="py-3.5 px-3 whitespace-nowrap text-slate-500 dark:text-slate-400">
+                              {vehicle ? (
+                                <span className="text-[11px] font-medium bg-slate-100 dark:bg-white/5 px-2 py-0.5 rounded-md">
+                                  {vehicle.name}
+                                </span>
+                              ) : (
+                                <span className="text-slate-300 dark:text-slate-600">—</span>
+                              )}
+                            </td>
 
-                          {/* Running Balance Column */}
-                          <td className="py-3.5 px-4 text-right font-mono font-bold whitespace-nowrap text-slate-800 dark:text-slate-200">
-                            ₹{entry._runningBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
+                            {/* Income Column */}
+                            <td className="py-3.5 px-4 text-right font-mono whitespace-nowrap">
+                              {isIncome || isTransferIn ? (
+                                <span className="font-black text-emerald-600 dark:text-emerald-400">
+                                  +₹{numAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              ) : (
+                                <span className="text-slate-300 dark:text-slate-600">—</span>
+                              )}
+                            </td>
 
-                          {/* Actions */}
-                          <td className="py-3.5 px-3 text-center whitespace-nowrap">
-                            <div className="inline-flex items-center gap-1">
-                              <button
-                                onClick={() => openEditTransactionModal(entry)}
-                                title="Edit entry"
-                                className="p-1.5 text-slate-400 hover:text-cyan-500 hover:bg-cyan-500/10 rounded-lg transition-colors cursor-pointer"
-                              >
-                                <Edit2 size={13} />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  if (window.confirm(isTransfer ? 'Delete this transfer (both legs will be removed)?' : 'Delete this cash book entry?')) {
-                                    deleteCashBookEntry(entry.id);
-                                  }
-                                }}
-                                title="Delete entry"
-                                className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            {/* Expense Column */}
+                            <td className="py-3.5 px-4 text-right font-mono whitespace-nowrap">
+                              {isExpense || isTransferOut ? (
+                                <span className="font-black text-rose-600 dark:text-rose-400">
+                                  -₹{numAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              ) : (
+                                <span className="text-slate-300 dark:text-slate-600">—</span>
+                              )}
+                            </td>
+
+                            {/* Running Balance Column */}
+                            <td className="py-3.5 px-4 text-right font-mono font-bold whitespace-nowrap text-slate-800 dark:text-slate-200">
+                              ₹{entry._runningBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+
+                            {/* Actions */}
+                            <td className="py-3.5 px-3 text-center whitespace-nowrap">
+                              <div className="inline-flex items-center gap-1">
+                                <button
+                                  onClick={() => openEditTransactionModal(entry)}
+                                  title="Edit entry"
+                                  className="p-1.5 text-slate-400 hover:text-cyan-500 hover:bg-cyan-500/10 rounded-lg transition-colors cursor-pointer"
+                                >
+                                  <Edit2 size={13} />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    if (window.confirm(isTransfer ? 'Delete this transfer (both legs will be removed)?' : 'Delete this cash book entry?')) {
+                                      deleteCashBookEntry(entry.id);
+                                    }
+                                  }}
+                                  title="Delete entry"
+                                  className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
+
+              {/* MOBILE TOUCH-FRIENDLY TRANSACTION CARDS (hidden on desktop) */}
+              <div className="block md:hidden space-y-3">
+                {ledgerRows.map((entry) => {
+                  const isIncome = entry.entry_type === 'income';
+                  const isTransfer = entry.entry_type === 'transfer';
+                  const isTransferIn = isTransfer && entry.transfer_direction === 'in';
+                  const numAmount = parseFloat(entry.amount) || 0;
+                  const account = accountsMap[entry.account_id];
+                  const vehicle = vehiclesMap[entry.vehicle_id];
+
+                  return (
+                    <div
+                      key={entry.id}
+                      className="glass-card p-4 rounded-2xl border border-slate-200/80 dark:border-white/10 space-y-3 shadow-xs"
+                    >
+                      {/* Top row: Date, Category badge, Transfer badge, Vehicle */}
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-mono text-slate-500 dark:text-slate-400 text-[11px]">
+                          {entry.entry_date}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {isTransfer ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20">
+                              <ArrowLeftRight size={10} /> {isTransferIn ? 'Transfer In' : 'Transfer Out'}
+                            </span>
+                          ) : (
+                            <span className={`inline-block text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${
+                              isIncome
+                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                                : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                            }`}>
+                              {entry.category || 'General'}
+                            </span>
+                          )}
+                          {vehicle && (
+                            <span className="text-[10px] font-semibold bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded-md">
+                              {vehicle.name}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Middle row: Description + Amount */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <h4 className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                            {entry.description || entry.category}
+                          </h4>
+                          {(entry.reference || entry.notes) && (
+                            <p className="text-[11px] text-slate-400 dark:text-slate-500 line-clamp-1 mt-0.5">
+                              {entry.reference && <span className="font-mono mr-1">Ref: {entry.reference}</span>}
+                              {entry.notes}
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className={`text-base font-black font-mono ${
+                            isIncome || isTransferIn
+                              ? 'text-emerald-600 dark:text-emerald-400'
+                              : 'text-rose-600 dark:text-rose-400'
+                          }`}>
+                            {isIncome || isTransferIn ? '+' : '-'}₹{numAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Bottom row: Account, Running balance, Actions */}
+                      <div className="pt-2 border-t border-slate-200/50 dark:border-white/5 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+                          <span className="text-slate-400">{getAccountIcon(account?.account_type)}</span>
+                          <span className="font-semibold text-[11px]">{account?.name || 'Cash'}</span>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <span className="text-[10px] text-slate-400 mr-1">Bal:</span>
+                            <span className="font-mono font-bold text-[11px] text-slate-800 dark:text-slate-200">
+                              ₹{entry._runningBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => openEditTransactionModal(entry)}
+                              title="Edit entry"
+                              className="p-1.5 text-slate-400 hover:text-cyan-500 hover:bg-cyan-500/10 rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Edit2 size={13} />
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (window.confirm(isTransfer ? 'Delete this transfer (both legs will be removed)?' : 'Delete this cash book entry?')) {
+                                  deleteCashBookEntry(entry.id);
+                                }
+                              }}
+                              title="Delete entry"
+                              className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )}
         </div>
 
@@ -1384,6 +1747,87 @@ export default function CashBookScreen() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* MODAL: REPORTS PREVIEW & PERIOD SUMMARY (Phase 2) */}
+      {/* ==================================================== */}
+      {showReportsModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-md border border-slate-200 dark:border-white/10 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="p-2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-xl">
+                  <BarChart3 size={18} />
+                </span>
+                <div>
+                  <h3 className="font-black text-lg text-slate-900 dark:text-white">
+                    Cash Book Summary
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Active Filters Period Summary
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowReportsModal(false)}
+                className="p-1 text-slate-400 hover:text-white rounded-lg cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block mb-1">
+                  Total Income
+                </span>
+                <span className="text-lg font-black font-mono text-emerald-600 dark:text-emerald-400">
+                  ₹{reportsSummary.income.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-600 dark:text-rose-400 block mb-1">
+                  Total Expense
+                </span>
+                <span className="text-lg font-black font-mono text-rose-600 dark:text-rose-400">
+                  ₹{reportsSummary.expense.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 block mb-0.5">
+                  Net Cashflow
+                </span>
+                <span className={`text-base font-black font-mono ${
+                  reportsSummary.net >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'
+                }`}>
+                  {reportsSummary.net >= 0 ? '+' : ''}₹{reportsSummary.net.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="text-right text-[11px] text-slate-400">
+                <span>{reportsSummary.count} entries</span>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-600 dark:text-cyan-400 text-xs">
+              <p className="font-semibold">Phase 4 Reports & Analytics</p>
+              <p className="text-[11px] text-cyan-600/80 dark:text-cyan-400/80 mt-0.5">
+                Full visual charts, monthly trends, vehicle cost breakdowns, and CSV export will be available in Phase 4.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setShowReportsModal(false)}
+              className="w-full py-2.5 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-950 font-black text-xs cursor-pointer active:scale-95 transition-transform"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}

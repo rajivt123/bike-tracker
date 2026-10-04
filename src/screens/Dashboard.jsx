@@ -8,7 +8,7 @@ import {
 import { calculateStats } from '../utils/helpers';
 import { useAppData } from '../context/AppDataContext';
 
-const Dashboard = ({ records = [], userProfile, onNavigate, onCompletePendingRefill }) => {
+const Dashboard = ({ records = [], userProfile, onNavigate, onOpenDetailedList, onCompletePendingRefill }) => {
   const { 
     vehicles, 
     activeVehicle, 
@@ -461,7 +461,7 @@ const Dashboard = ({ records = [], userProfile, onNavigate, onCompletePendingRef
 
                 {/* Tile 3: Logs Data Table */}
                 <button
-                  onClick={() => onNavigate('detailed_list')}
+                  onClick={onOpenDetailedList || (() => onNavigate('detailed_list'))}
                   className="glass-card hover:bg-purple-500/10 p-4 rounded-2xl border border-slate-200/80 dark:border-white/10 hover:border-purple-500/40 text-left transition-all group flex flex-col justify-between h-28 relative overflow-hidden active:scale-95 shadow-xs cursor-pointer"
                 >
                   <div className="flex items-center justify-between w-full">
@@ -488,7 +488,7 @@ const Dashboard = ({ records = [], userProfile, onNavigate, onCompletePendingRef
               </h2>
               {records.length > 0 && (
                 <button
-                  onClick={() => onNavigate('detailed_list')}
+                  onClick={onOpenDetailedList || (() => onNavigate('detailed_list'))}
                   className="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:text-emerald-500 dark:hover:text-emerald-300 hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   View All ({records.length}) <ChevronRight size={14} />
@@ -509,7 +509,7 @@ const Dashboard = ({ records = [], userProfile, onNavigate, onCompletePendingRef
                 recentRecords.map(record => (
                   <div 
                     key={record.id}
-                    onClick={() => onNavigate('detailed_list')}
+                    onClick={onOpenDetailedList || (() => onNavigate('detailed_list'))}
                     className="p-3.5 flex items-center justify-between hover:bg-slate-50/80 dark:hover:bg-white/5 rounded-2xl transition-all cursor-pointer group"
                   >
                     <div className="flex items-center gap-3">

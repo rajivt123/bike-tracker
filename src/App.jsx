@@ -54,6 +54,7 @@ function AppContent() {
     restoreFromBin,
     permanentDelete,
     bulkImportFuelRecords,
+    refreshFuelRecords,
     addVehicle,
     updateVehicle
   } = useAppData();
@@ -136,6 +137,13 @@ function AppContent() {
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
   }, []);
 
+  // Guarantee window and document scroll reset to top whenever screen view changes
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+  }, [view]);
+
   const handleInstallPWA = async () => {
     if (!deferredPrompt) return;
     deferredPrompt.prompt();
@@ -193,6 +201,15 @@ function AppContent() {
     isSetup: true,
   };
 
+  const handleOpenDetailedList = () => {
+    setFilterConfig(initialFilterConfig);
+    if (refreshFuelRecords) refreshFuelRecords();
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+    setView('detailed_list');
+  };
+
   const handleBackFromDetailedList = () => {
     setFilterConfig(initialFilterConfig);
     setView('home');
@@ -206,7 +223,7 @@ function AppContent() {
           setView('home');
         } else {
           await updateFuelRecord(savedData.id, savedData);
-          setView('detailed_list');
+          handleOpenDetailedList();
         }
         setEditingRecord(null);
       } else if (savedData.status === 'pending') {
@@ -230,7 +247,7 @@ function AppContent() {
     try {
       await moveToBin(id);
       setEditingRecord(null);
-      setView('detailed_list');
+      handleOpenDetailedList();
     } catch (err) {
       alert('Error deleting record: ' + err.message);
     }
@@ -444,7 +461,7 @@ function AppContent() {
           msg += `\n\nInvalid rows were skipped because required date, amount, rate, or reserve-to-reserve odometer data was missing or invalid.`;
         }
         alert(msg);
-        setView('detailed_list');
+        handleOpenDetailedList();
       } else {
         alert(`No new records imported.\n� Total rows scanned: ${totalRows}\n� Duplicates skipped: ${duplicateCount}\n� Invalid rows skipped: ${invalidCount}\n\nInvalid rows were skipped because required date, amount, rate, or reserve-to-reserve odometer data was missing or invalid.`);
       }
@@ -456,6 +473,14 @@ function AppContent() {
 
   const lastRecord = records.length > 0 ? records[records.length - 1] : null;
 
+  const handleNavigate = (newView) => {
+    if (newView === 'detailed_list') {
+      handleOpenDetailedList();
+    } else {
+      setView(newView);
+    }
+  };
+
   const renderScreen = () => {
     switch (view) {
       case 'home':
@@ -463,7 +488,8 @@ function AppContent() {
           <Dashboard 
             records={records} 
             userProfile={userProfile} 
-            onNavigate={setView} 
+            onNavigate={handleNavigate}
+            onOpenDetailedList={handleOpenDetailedList}
             onCompletePendingRefill={handleCompletePendingRefill}
           />
         );
@@ -482,7 +508,7 @@ function AppContent() {
             isEditMode={true}
             initialData={editingRecord}
             onSave={handleSaveRecord}
-            onCancel={() => { setEditingRecord(null); setView('detailed_list'); }}
+            onCancel={() => { setEditingRecord(null); handleOpenDetailedList(); }}
             onDelete={handleMoveToBin}
             lastRecord={lastRecord}
             allRecords={records}
@@ -503,7 +529,7 @@ function AppContent() {
             filterConfig={filterConfig}
             onFilterChange={setFilterConfig}
             onBack={() => setView('home')}
-            onNavigateList={() => setView('detailed_list')}
+            onNavigateList={handleOpenDetailedList}
             userProfile={userProfile}
           />
         );
@@ -540,7 +566,8 @@ function AppContent() {
           <Dashboard 
             records={records} 
             userProfile={userProfile} 
-            onNavigate={setView}
+            onNavigate={handleNavigate}
+            onOpenDetailedList={handleOpenDetailedList}
             onCompletePendingRefill={handleCompletePendingRefill}
           />
         );
@@ -659,7 +686,7 @@ function AppContent() {
                 <BarChart3 size={15} /> Analytics
               </button>
               <button
-                onClick={() => setView('detailed_list')}
+                onClick={handleOpenDetailedList}
                 className={`px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer ${view === 'detailed_list' ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 font-bold shadow-md shadow-emerald-500/25' : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'}`}
               >
                 <TableProperties size={15} /> Logs
